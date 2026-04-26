@@ -1,0 +1,32 @@
+name: Daily Stock Alert
+
+on:
+  schedule:
+    # 매일 UTC 21:30 = 한국시간 오전 6:30
+    - cron: '30 21 * * *'
+  workflow_dispatch:  # 수동 트리거
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.13 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: 주식 시그널 분석 및 텔레그램 전송
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MY_HOLDINGS: ${{ secrets.MY_HOLDINGS }}
+        run: python main.py
