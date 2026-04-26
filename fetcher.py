@@ -1,0 +1,91 @@
+"""
+yfinance 배치 다운로드 + 품질 필터
+"""
+import time
+
+import pandas as pd
+import yfinance as yf
+
+from config import MIN_PRICE, MIN_VOLUME, VOLUME_PERIOD
+
+
+def fetch_batch(
+    tickers: list[str], period: str = "1y", chunk_size: int = 100
+) -> dict[str, pd.DataFrame]:
+    """
+    tickers 를 chunk_size 단위로 나눠 yfinance 배치 다운로드.
+    반환: {ticker: OHLCV DataFrame}
+    """
+    all_data: dict[str, pd.DataFrame] = {}
+    total = (len(tickers) + chunk_size - 1) // chunk_size
+
+    for i in range(0, len(tickers), chunk_size):
+        chunk = tickers[i : i + chunk_size]
+        chunk_no = i // chunk_size + 1
+        print(f"  [{chunk_no}/{total}] {len(chunk)}개 다운로드 중...")
+
+        try:
+            raw = yf.download(
+                " ".join(chunk),
+                period=period,
+                auto_adjust=True,
+                progress=False,
+                threads=True,
+            )
+            if raw.empty:
+                continue
+
+            _extract_from_raw(raw, chunk, all_data)
+
+        except Exception as e:
+            print(f"    오류: {e}")
+
+        time.sleep(0.5)
+
+    return all_data
+
+
+def _extract_from_raw(
+    raw: pd.DataFrame, chunk: list[str], out: dict[str, pd.DataFrame]
+) -> None:
+    """MultiIndex / 단일 DataFrame 모두 처리"""
+    if not isinstance(raw.columns, pd.MultiIndex):
+        # 단일 종목
+        if len(chunk) == 1 and len(raw) >= 60 and "Close" in raw.columns:
+            out[chunk[0]] = raw.dropna(how="all")
+        return
+
+    # MultiIndex: (필드, 티커) 또는 (티커, 필드) 두 가지 경우 처리
+    for ticker in chunk:
+        df = None
+        for level in (1, 0):
+            try:
+                candidate = raw.xs(ticker, axis=1, level=level)
+                if isinstance(candidate, pd.DataFrame) and "Close" in candidate.columns:
+                    df = candidate
+                    break
+            except KeyError:
+                continue
+
+        if df is not None:
+            df = df.dropna(how="all")
+            if len(df) >= 60:
+                out[ticker] = df
+
+
+def apply_quality_filter(
+    data: dict[str, pd.DataFrame]
+) -> dict[str, pd.DataFrame]:
+    """
+    주가 > $5, 20일 평균 거래량 > 50만 주 필터
+    """
+    qualified: dict[str, pd.DataFrame] = {}
+    for ticker, df in data.items():
+        try:
+            last_close = float(df["Close"].iloc[-1])
+            avg_vol = float(df["Volume"].tail(VOLUME_PERIOD).mean())
+            if last_close >= MIN_PRICE and avg_vol >= MIN_VOLUME:
+                qualified[ticker] = df
+        except Exception:
+            pass
+    return qualified
