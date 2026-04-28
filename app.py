@@ -289,11 +289,24 @@ elif page == "🚀 분석 실행":
             with tab:
                 rows = last.get(key, [])
                 if rows:
-                    df = pd.DataFrame(rows)[["ticker", "score", "grade", "close", "change_pct"]]
-                    df.columns = ["티커", "점수", "등급", "종가($)", "등락(%)"]
-                    df["점수"]    = df["점수"].apply(lambda x: f"{x:+.1f}")
-                    df["등락(%)"] = df["등락(%)"].apply(lambda x: f"{x:+.1f}%")
-                    st.dataframe(df, use_container_width=True, hide_index=True)
+                    records = []
+                    for r in rows:
+                        pred = r.get("prediction") or {}
+                        lo   = pred.get("short_lo_68")
+                        hi   = pred.get("short_hi_68")
+                        week = f"${lo:.0f}~${hi:.0f}" if lo is not None and hi is not None else "—"
+                        records.append({
+                            "티커":    r["ticker"],
+                            "합산":    f"{r['score']:+.1f}",
+                            "장타":    f"{r.get('long_score',  0):+.0f}",
+                            "단타":    f"{r.get('short_score', 0):+.0f}",
+                            "추천":    r.get("recommendation", "—"),
+                            "등급":    r["grade"],
+                            "종가($)": r["close"],
+                            "등락(%)": f"{r['change_pct']:+.1f}%",
+                            "1주범위": week,
+                        })
+                    st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
                 else:
                     st.info("해당 항목 없음 (관망 구간에 속하는 종목만 있거나 데이터 없음)")
     else:
