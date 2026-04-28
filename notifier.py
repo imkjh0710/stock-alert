@@ -101,12 +101,16 @@ def build_messages(
     total: int,
     sp500_results: list[dict],
     outer_results: list[dict],
+    etf_results: list[dict] = None,
 ) -> list[str]:
-    all_results = sp500_results + outer_results
+    etf_results  = etf_results or []
+    all_results  = sp500_results + outer_results + etf_results
 
     # ── 매수/매도 분리 (관망 -3~+3 제외) ──────────────────────────────
     sp_buy   = sorted([r for r in sp500_results if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)
     sp_sell  = sorted([r for r in sp500_results if r["score"] < -3],  key=lambda r: r["score"])
+    etf_buy  = sorted([r for r in etf_results   if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)
+    etf_sell = sorted([r for r in etf_results   if r["score"] < -3],  key=lambda r: r["score"])
     out_buy  = sorted([r for r in outer_results  if r["score"] >= 4], key=lambda r: r["score"], reverse=True)
     out_sell = sorted([r for r in outer_results  if r["score"] < -3], key=lambda r: r["score"])
 
@@ -128,6 +132,8 @@ def build_messages(
     body = (
         _section("━━━ 🏆 <b>S&amp;P 500 매수 TOP 25</b> ━━━", sp_buy,  25)
         + _section("━━━ 🏆 <b>S&amp;P 500 매도 TOP 25</b> ━━━", sp_sell, 25)
+        + _section("━━━ 📊 <b>ETF 매수 TOP 10</b> ━━━",          etf_buy,  10)
+        + _section("━━━ 📊 <b>ETF 매도 TOP 10</b> ━━━",          etf_sell, 10)
         + _section("━━━ 💎 <b>외곽 매수 TOP 15</b> ━━━",         out_buy,  15)
         + _section("━━━ 💎 <b>외곽 매도 TOP 15</b> ━━━",         out_sell, 15)
     )

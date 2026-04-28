@@ -12,7 +12,7 @@ import requests
 
 from config import (
     CACHE_DIR, UNIVERSE_CACHE, UNIVERSE_REFRESH_DAYS,
-    SP500_URL, SP400_URL, SP600_URL, IWV_URL,
+    SP500_URL, SP400_URL, SP600_URL, IWV_URL, ETF_TICKERS,
 )
 
 
@@ -75,6 +75,11 @@ def _iwv_tickers() -> list[str]:
     except Exception as e:
         print(f"    IWV 다운로드 실패: {e}")
         return []
+
+
+def get_etf_tickers() -> list[str]:
+    """고정 ETF 리스트 반환"""
+    return list(ETF_TICKERS)
 
 
 def get_universe(force_refresh: bool = False) -> tuple[list[str], list[str]]:
