@@ -6,3 +6,4 @@ python-dotenv==1.2.2
 lxml==6.1.0
 beautifulsoup4==4.14.3
 streamlit>=1.40.0
+tzdata>=2024.1
