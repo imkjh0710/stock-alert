@@ -9,6 +9,7 @@ import json
 import os
 from datetime import datetime
 
+from config import CACHE_DIR
 from universe import get_universe
 from dividend_analyzer import analyze_dividends
 from notifier import send_message
@@ -203,6 +204,37 @@ def main():
 
     results  = analyze_dividends(all_tickers)
     date_str = t0.strftime("%Y-%m-%d")
+
+    # ── 캐시 저장 (app.py 표시용) ──────────────────────────────────────
+    held_set = set(holdings)
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    # 직렬화 불가 필드 제거 후 저장
+    def _clean(r: dict) -> dict:
+        return {k: v for k, v in r.items() if isinstance(v, (str, int, float, bool, type(None)))}
+
+    cache = {
+        "date":       date_str,
+        "total":      len(results),
+        "growth_top": [_clean(r) for r in sorted(
+            [r for r in results if r.get("dgr10") is not None and not r.get("had_cut")],
+            key=lambda r: (r.get("dgr10") or 0, r["score"]), reverse=True)[:15]],
+        "royalty":    [_clean(r) for r in sorted(
+            [r for r in results if r.get("consecutive_growth", 0) >= 25],
+            key=lambda r: (r.get("consecutive_growth", 0), r["score"]), reverse=True)[:10]],
+        "high_yield": [_clean(r) for r in sorted(
+            [r for r in results if (r.get("yield_ttm") or 0) >= 3
+             and (r.get("payout_ratio") is None or (r.get("payout_ratio") or 1) < 0.80)],
+            key=lambda r: r.get("yield_ttm") or 0, reverse=True)[:10]],
+        "risk":       [_clean(r) for r in sorted(
+            [r for r in results if r.get("had_cut")
+             or (r.get("payout_ratio") is not None and (r.get("payout_ratio") or 0) > 0.9)],
+            key=lambda r: r.get("payout_ratio") or 0, reverse=True)[:5]],
+        "holdings_data": [_clean(r) for r in results if r["ticker"] in held_set],
+    }
+    with open(os.path.join(CACHE_DIR, "last_dividend.json"), "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False)
+    print("  캐시 저장 완료 (cache/last_dividend.json)\n")
+
     messages = build_report(date_str, results, holdings)
 
     print(f"▶ 텔레그램 전송 중... (총 {len(messages)}개 메시지)")

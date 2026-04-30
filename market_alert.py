@@ -44,17 +44,20 @@ def _load_holdings() -> list[str]:
 
 
 def _detect_alert_type() -> str | None:
-    """현재 ET 시간 기반으로 open/close 자동 판단"""
+    """현재 ET 시간 기반으로 open/close 자동 판단.
+    GitHub Actions 최대 10분 지연 감안, EDT/EST 겹침 방지를 위해 ±10분 창 사용.
+    EDT(UTC-4): 14:00 UTC → 10:00 AM ET ✓ / EST(UTC-5): 15:00 UTC → 10:00 AM ET ✓
+    반대편(14:00 UTC → EST 9:00 AM, 15:00 UTC → EDT 11:00 AM)은 창 밖 → 전송 안함
+    """
     now_et = datetime.now(ET)
-    # 평일만
-    if now_et.weekday() >= 5:
+    if now_et.weekday() >= 5:   # 주말 제외
         return None
     total_min = now_et.hour * 60 + now_et.minute
-    # 09:45 ~ 10:30 → open
-    if 9 * 60 + 45 <= total_min <= 10 * 60 + 30:
+    # 09:50 ~ 10:10 ET → open  (20분 창)
+    if 9 * 60 + 50 <= total_min <= 10 * 60 + 10:
         return "open"
-    # 15:45 ~ 16:30 → close
-    if 15 * 60 + 45 <= total_min <= 16 * 60 + 30:
+    # 15:50 ~ 16:10 ET → close (20분 창)
+    if 15 * 60 + 50 <= total_min <= 16 * 60 + 10:
         return "close"
     return None
 

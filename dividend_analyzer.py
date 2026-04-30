@@ -1,9 +1,10 @@
 """
 배당 분석 모듈
 10년치 배당 히스토리 기반 메트릭 계산 및 점수화
+
+yf.download(actions=True) 배치는 yfinance 1.3.0에서 Dividends 컬럼 누락 버그 있음.
+→ yf.Ticker(t).dividends 개별 병렬 조회 방식 사용.
 """
-import time
-import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -12,75 +13,55 @@ import pandas as pd
 import yfinance as yf
 
 
-# ── 배당 히스토리 배치 다운로드 ──────────────────────────────────────────
-def _extract_close_divs(
-    raw: pd.DataFrame, ticker: str, chunk: list
-) -> tuple[pd.Series | None, pd.Series | None]:
-    """MultiIndex / 단일 DataFrame에서 Close, Dividends 추출"""
-    if isinstance(raw.columns, pd.MultiIndex):
-        close, divs = None, None
-        for level in (1, 0):
-            try:
-                sub = raw.xs(ticker, axis=1, level=level)
-                if isinstance(sub, pd.DataFrame):
-                    if "Close" in sub.columns and close is None:
-                        close = sub["Close"].dropna()
-                    if "Dividends" in sub.columns and divs is None:
-                        d = sub["Dividends"]
-                        divs = d[d > 0]
-            except KeyError:
-                continue
-        return close, divs
-    else:
-        if len(chunk) == 1:
-            close = raw["Close"].dropna() if "Close" in raw.columns else None
-            if "Dividends" in raw.columns:
-                d = raw["Dividends"]
-                divs = d[d > 0]
-            else:
-                divs = pd.Series(dtype=float)
-            return close, divs
-        return None, None
+# ── 배당 히스토리 개별 병렬 조회 ────────────────────────────────────────
+def _get_one(ticker: str) -> tuple[str, dict | None]:
+    """단일 종목의 배당 + 종가 히스토리 조회"""
+    try:
+        t    = yf.Ticker(ticker)
+        divs = t.dividends          # 전체 배당 히스토리 Series
+        if divs is None or len(divs) < 4:
+            return ticker, None
+
+        # 최근 3년 내 배당이 없으면 비활성으로 간주
+        tz = divs.index.tz
+        cutoff3y = (
+            pd.Timestamp.now(tz=tz) if tz else pd.Timestamp.now()
+        ) - pd.DateOffset(years=3)
+        if len(divs[divs.index >= cutoff3y]) < 2:
+            return ticker, None
+
+        hist = t.history(period="11y")
+        if hist.empty or "Close" not in hist.columns:
+            return ticker, None
+
+        return ticker, {
+            "dividends": divs[divs > 0],
+            "close":     hist["Close"].dropna(),
+        }
+    except Exception:
+        return ticker, None
 
 
 def fetch_dividend_history(
-    tickers: list[str], chunk_size: int = 50
+    tickers: list[str], max_workers: int = 8
 ) -> dict[str, dict]:
     """
-    10년치 가격+배당 배치 다운로드.
+    개별 yf.Ticker() 병렬 조회로 배당 히스토리 수집.
     반환: {ticker: {'dividends': Series, 'close': Series}}
     """
     results: dict[str, dict] = {}
-    total = (len(tickers) + chunk_size - 1) // chunk_size
+    total = len(tickers)
+    done  = 0
 
-    for i in range(0, len(tickers), chunk_size):
-        chunk  = tickers[i: i + chunk_size]
-        chunk_no = i // chunk_size + 1
-        print(f"  [{chunk_no}/{total}] {len(chunk)}개 배당 데이터 다운로드...")
-
-        try:
-            raw = yf.download(
-                " ".join(chunk),
-                period="11y",
-                actions=True,
-                auto_adjust=False,
-                progress=False,
-                threads=True,
-            )
-            if raw.empty:
-                continue
-
-            for ticker in chunk:
-                close, divs = _extract_close_divs(raw, ticker, chunk)
-                if divs is not None and len(divs) >= 2:
-                    results[ticker] = {
-                        "dividends": divs,
-                        "close":     close if close is not None else pd.Series(dtype=float),
-                    }
-        except Exception as e:
-            print(f"    오류: {e}")
-
-        time.sleep(0.5)
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = {ex.submit(_get_one, t): t for t in tickers}
+        for fut in as_completed(futs):
+            ticker, data = fut.result()
+            done += 1
+            if data:
+                results[ticker] = data
+            if done % 300 == 0:
+                print(f"    진행 {done}/{total}개 (배당주 {len(results)}개 발견)")
 
     return results
 

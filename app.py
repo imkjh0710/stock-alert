@@ -17,10 +17,11 @@ import yfinance as yf
 BASE_DIR     = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
 
-SETTINGS_FILE = BASE_DIR / "settings.json"
-HOLDINGS_FILE = BASE_DIR / "holdings.json"
-LOGS_DIR      = BASE_DIR / "logs"
-LAST_RESULTS  = BASE_DIR / "cache" / "last_results.json"
+SETTINGS_FILE   = BASE_DIR / "settings.json"
+HOLDINGS_FILE   = BASE_DIR / "holdings.json"
+LOGS_DIR        = BASE_DIR / "logs"
+LAST_RESULTS    = BASE_DIR / "cache" / "last_results.json"
+LAST_DIVIDEND   = BASE_DIR / "cache" / "last_dividend.json"
 
 # ── 기본 설정값 ───────────────────────────────────────────────────────
 DEFAULT_SETTINGS = {
@@ -76,7 +77,7 @@ with st.sidebar:
     st.markdown("---")
     page = st.radio(
         "페이지",
-        ["⚙️ 지표 설정", "📋 보유 종목", "🚀 분석 실행", "📁 리포트 기록"],
+        ["⚙️ 지표 설정", "📋 보유 종목", "🚀 분석 실행", "💰 배당 분석", "📁 리포트 기록"],
         label_visibility="collapsed",
     )
     st.markdown("---")
@@ -314,7 +315,74 @@ elif page == "🚀 분석 실행":
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 4. 리포트 기록
+# 4. 배당 분석
+# ══════════════════════════════════════════════════════════════════════
+elif page == "💰 배당 분석":
+    st.title("💰 배당주 주간 리포트")
+
+    if not LAST_DIVIDEND.exists():
+        st.info("아직 배당 분석 기록이 없습니다. 매주 일요일 22:00 KST에 자동 실행됩니다.")
+    else:
+        with open(LAST_DIVIDEND, encoding="utf-8") as f:
+            div_data = json.load(f)
+
+        st.caption(
+            f"분석일: **{div_data.get('date', '—')}**  |  "
+            f"배당 지급 종목: **{div_data.get('total', 0):,}개**"
+        )
+
+        def _div_table(rows: list) -> None:
+            if not rows:
+                st.info("해당 항목 없음")
+                return
+            records = []
+            for r in rows:
+                consec = r.get("consecutive_growth", 0)
+                if   consec >= 50: king = "👑킹"
+                elif consec >= 25: king = "🏆귀족"
+                elif consec >= 10: king = "⭐챔피언"
+                else:              king = ""
+                dgr10 = r.get("dgr10")
+                dgr5  = r.get("dgr5")
+                payout = r.get("payout_ratio")
+                records.append({
+                    "티커":         r["ticker"],
+                    "등급":         r.get("grade", "—"),
+                    "점수":         f"{r['score']:+.0f}",
+                    "10Y DGR":     f"{dgr10:.0f}%" if dgr10 is not None else "N/A",
+                    "5Y DGR":      f"{dgr5:.0f}%"  if dgr5  is not None else "N/A",
+                    "연속증가":     f"{consec}년 {king}",
+                    "배당률(TTM)": f"{r.get('yield_ttm', 0):.1f}%",
+                    "Payout":      f"{payout*100:.0f}%" if payout is not None else "N/A",
+                    "배당컷":       "✂컷" if r.get("had_cut") else "—",
+                })
+            st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "🚀 배당 성장 TOP 15",
+            "🏆 킹/귀족 TOP 10",
+            "💰 고배당 TOP 10",
+            "⚠️ 배당 컷 위험",
+            "⭐ 내 보유 종목",
+        ])
+        with tab1:
+            _div_table(div_data.get("growth_top", []))
+        with tab2:
+            _div_table(div_data.get("royalty", []))
+        with tab3:
+            _div_table(div_data.get("high_yield", []))
+        with tab4:
+            _div_table(div_data.get("risk", []))
+        with tab5:
+            held = div_data.get("holdings_data", [])
+            if held:
+                _div_table(held)
+            else:
+                st.info("보유 종목 배당 데이터가 없습니다. 보유 종목을 등록하거나 배당 분석을 실행해주세요.")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 5. 리포트 기록
 # ══════════════════════════════════════════════════════════════════════
 elif page == "📁 리포트 기록":
     st.title("📁 리포트 기록")
