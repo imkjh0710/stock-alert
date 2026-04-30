@@ -171,6 +171,22 @@ elif page == "📋 보유 종목":
             except Exception:
                 pass
 
+    # 배당 캐시 로드
+    div_map: dict = {}
+    if LAST_DIVIDEND.exists():
+        try:
+            with open(LAST_DIVIDEND, encoding="utf-8") as f:
+                _dc = json.load(f)
+            for _r in _dc.get("holdings_data", []):
+                div_map[_r["ticker"]] = _r
+            # holdings_data 에 없는 종목은 전체 카테고리에서 보완
+            for _cat in ("growth_top", "royalty", "high_yield", "risk"):
+                for _r in _dc.get(_cat, []):
+                    if _r["ticker"] not in div_map:
+                        div_map[_r["ticker"]] = _r
+        except Exception:
+            pass
+
     # 종목 목록 표
     if not holdings:
         st.info("등록된 보유 종목이 없습니다. 아래에서 추가해주세요.")
@@ -198,6 +214,47 @@ elif page == "📋 보유 종목":
             holdings.pop(delete_idx)
             save_holdings(holdings)
             st.rerun()
+
+        # 배당 현황 테이블
+        st.markdown("---")
+        st.markdown("#### 💰 보유 종목 배당 현황")
+        if not div_map:
+            st.caption("배당 데이터 없음 — 매일 22:00 KST 자동 업데이트됩니다.")
+        else:
+            div_records = []
+            for h in holdings:
+                t  = h["ticker"]
+                dr = div_map.get(t)
+                if dr is None:
+                    div_records.append({
+                        "티커": t, "배당등급": "—", "배당점수": "—",
+                        "배당률(TTM)": "—", "10Y DGR": "—", "5Y DGR": "—",
+                        "연속증가": "—", "Payout": "—", "배당컷": "—",
+                    })
+                    continue
+                consec = dr.get("consecutive_growth", 0)
+                if   consec >= 50: king = "👑킹"
+                elif consec >= 25: king = "🏆귀족"
+                elif consec >= 10: king = "⭐챔피언"
+                else:              king = ""
+                dgr10  = dr.get("dgr10")
+                dgr5   = dr.get("dgr5")
+                payout = dr.get("payout_ratio")
+                div_records.append({
+                    "티커":        t,
+                    "배당등급":    dr.get("grade", "—"),
+                    "배당점수":    f"{dr['score']:+.0f}",
+                    "배당률(TTM)": f"{dr.get('yield_ttm', 0):.1f}%",
+                    "10Y DGR":    f"{dgr10:.0f}%" if dgr10 is not None else "N/A",
+                    "5Y DGR":     f"{dgr5:.0f}%"  if dgr5  is not None else "N/A",
+                    "연속증가":    f"{consec}년 {king}".strip(),
+                    "Payout":     f"{payout*100:.0f}%" if payout is not None else "N/A",
+                    "배당컷":      "✂컷" if dr.get("had_cut") else "—",
+                })
+            if div_records:
+                st.dataframe(pd.DataFrame(div_records), use_container_width=True, hide_index=True)
+            else:
+                st.caption("보유 종목이 배당 데이터에 없습니다.")
 
     # 종목 추가
     st.markdown("---")

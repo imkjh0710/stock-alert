@@ -1,8 +1,8 @@
-name: Weekly Dividend Report
+name: Daily Dividend Report
 
 on:
   schedule:
-    - cron: '0 13 * * 0'   # 매주 일요일 13:00 UTC = 22:00 KST
+    - cron: '0 13 * * 1-5'   # 평일 매일 13:00 UTC = 22:00 KST
   workflow_dispatch:
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run weekly dividend report
+      - name: Run dividend report
         run: python weekly_dividend.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
