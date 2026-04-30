@@ -83,6 +83,13 @@ def main():
     with open(os.path.join(CACHE_DIR, "last_results.json"), "w", encoding="utf-8") as f:
         json.dump(cache_payload, f, ensure_ascii=False)
 
+    # 날짜별 아카이브 저장 (위클리 집계용)
+    daily_dir = os.path.join(CACHE_DIR, "daily")
+    os.makedirs(daily_dir, exist_ok=True)
+    with open(os.path.join(daily_dir, f"{date_str}.json"), "w", encoding="utf-8") as f:
+        json.dump(cache_payload, f, ensure_ascii=False)
+    print(f"  일별 캐시 저장: cache/daily/{date_str}.json\n")
+
     # ── 6. 텔레그램 전송 ──────────────────────────────────────────────
     print("▶ 텔레그램 메시지 전송 중...")
     messages = build_messages(date_str, total_scored, sp500_results, outer_results, etf_results)

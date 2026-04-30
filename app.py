@@ -387,94 +387,183 @@ elif page == "📋 보유 종목":
 # ══════════════════════════════════════════════════════════════════════
 elif page == "🚀 분석 실행":
     st.title("🚀 분석 실행")
-    st.caption("Russell 3000 전체 종목을 분석해 텔레그램으로 전송합니다.")
 
-    c1, c2 = st.columns([2, 8])
-    run_btn = c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True)
-    c2.info("⏱ 첫 실행 ~20분  /  캐시 있을 때 ~2분  /  실행 중 페이지 이동 시 중단됩니다.")
+    daily_tab, weekly_tab = st.tabs(["📅 데일리", "📆 위클리"])
 
-    if run_btn:
-        log_box = st.empty()
-        lines: list[str] = []
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    # ── 데일리 ────────────────────────────────────────────────────────
+    with daily_tab:
+        st.caption("Russell 3000 전체 종목을 분석해 텔레그램으로 전송합니다.")
+        c1, c2 = st.columns([2, 8])
+        run_btn = c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True)
+        c2.info("⏱ 첫 실행 ~20분  /  캐시 있을 때 ~2분  /  실행 중 페이지 이동 시 중단됩니다.")
 
-        proc = subprocess.Popen(
-            [sys.executable, str(BASE_DIR / "main.py")],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            bufsize=1,
-            cwd=str(BASE_DIR),
-            env=env,
-        )
-        t0 = time.time()
-        for line in proc.stdout:
-            lines.append(line)
-            log_box.code("".join(lines[-40:]), language="")
-        proc.wait()
-        elapsed = int(time.time() - t0)
+        if run_btn:
+            log_box = st.empty()
+            lines: list[str] = []
+            env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            proc = subprocess.Popen(
+                [sys.executable, str(BASE_DIR / "main.py")],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
+                cwd=str(BASE_DIR),
+                env=env,
+            )
+            t0 = time.time()
+            for line in proc.stdout:
+                lines.append(line)
+                log_box.code("".join(lines[-40:]), language="")
+            proc.wait()
+            elapsed = int(time.time() - t0)
+            if proc.returncode == 0:
+                st.success(f"✅ 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
+                st.rerun()
+            else:
+                st.error("❌ 오류 발생. 위 로그를 확인해주세요.")
 
-        if proc.returncode == 0:
-            st.success(f"✅ 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
-            st.rerun()
+        if LAST_RESULTS.exists():
+            st.markdown("---")
+            with open(LAST_RESULTS, encoding="utf-8") as f:
+                last = json.load(f)
+            st.caption(
+                f"분석일: **{last.get('date', '—')}**  |  "
+                f"분석 종목: **{last.get('total', 0):,}개**  |  "
+                "행을 클릭하면 봉차트 팝업이 열립니다."
+            )
+            d1, d2, d3, d4, d5, d6 = st.tabs(
+                ["🏆 S&P 500 매수 TOP 25", "🔻 S&P 500 매도 TOP 25",
+                 "📊 ETF 매수 TOP 10",     "🔻 ETF 매도 TOP 10",
+                 "💎 외곽 매수 TOP 15",    "🔻 외곽 매도 TOP 15"]
+            )
+            for tab, key in zip(
+                [d1, d2, d3, d4, d5, d6],
+                ["sp500_buy", "sp500_sell", "etf_buy", "etf_sell", "outer_buy", "outer_sell"],
+            ):
+                with tab:
+                    rows = last.get(key, [])
+                    if rows:
+                        records = []
+                        for r in rows:
+                            pred = r.get("prediction") or {}
+                            lo   = pred.get("short_lo_68")
+                            hi   = pred.get("short_hi_68")
+                            week = f"${lo:.0f}~${hi:.0f}" if lo is not None and hi is not None else "—"
+                            records.append({
+                                "티커":    r["ticker"],
+                                "합산":    f"{r['score']:+.1f}",
+                                "장타":    f"{r.get('long_score',  0):+.0f}",
+                                "단타":    f"{r.get('short_score', 0):+.0f}",
+                                "추천":    r.get("recommendation", "—"),
+                                "등급":    r["grade"],
+                                "종가($)": r["close"],
+                                "등락(%)": f"{r['change_pct']:+.1f}%",
+                                "1주범위": week,
+                            })
+                        evt = st.dataframe(
+                            pd.DataFrame(records),
+                            use_container_width=True, hide_index=True,
+                            on_select="rerun", selection_mode="single-row",
+                            key=f"d_tbl_{key}",
+                        )
+                        if evt.selection.rows:
+                            _show_chart(records[evt.selection.rows[0]]["티커"])
+                    else:
+                        st.info("해당 항목 없음 (관망 구간에 속하는 종목만 있거나 데이터 없음)")
         else:
-            st.error("❌ 오류 발생. 위 로그를 확인해주세요.")
+            st.info("아직 분석 기록이 없습니다. 위 버튼을 눌러 첫 분석을 실행해보세요.")
 
-    # 마지막 분석 결과 표
-    if LAST_RESULTS.exists():
-        st.markdown("---")
-        st.markdown("### 📊 마지막 분석 결과")
-        with open(LAST_RESULTS, encoding="utf-8") as f:
-            last = json.load(f)
+    # ── 위클리 ────────────────────────────────────────────────────────
+    with weekly_tab:
+        from datetime import date as _date, timedelta as _td
 
-        st.caption(
-            f"분석일: **{last.get('date', '—')}**  |  "
-            f"분석 종목: **{last.get('total', 0):,}개**  |  "
-            "행을 클릭하면 봉차트 팝업이 열립니다."
-        )
+        DAILY_DIR = BASE_DIR / "cache" / "daily"
 
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-            ["🏆 S&P 500 매수 TOP 25", "🔻 S&P 500 매도 TOP 25",
-             "📊 ETF 매수 TOP 10",     "🔻 ETF 매도 TOP 10",
-             "💎 외곽 매수 TOP 15",    "🔻 외곽 매도 TOP 15"]
-        )
-        for tab, key in zip(
-            [tab1, tab2, tab3, tab4, tab5, tab6],
-            ["sp500_buy", "sp500_sell", "etf_buy", "etf_sell", "outer_buy", "outer_sell"],
-        ):
-            with tab:
-                rows = last.get(key, [])
-                if rows:
-                    records = []
-                    for r in rows:
-                        pred = r.get("prediction") or {}
-                        lo   = pred.get("short_lo_68")
-                        hi   = pred.get("short_hi_68")
-                        week = f"${lo:.0f}~${hi:.0f}" if lo is not None and hi is not None else "—"
-                        records.append({
-                            "티커":    r["ticker"],
-                            "합산":    f"{r['score']:+.1f}",
-                            "장타":    f"{r.get('long_score',  0):+.0f}",
-                            "단타":    f"{r.get('short_score', 0):+.0f}",
-                            "추천":    r.get("recommendation", "—"),
-                            "등급":    r["grade"],
-                            "종가($)": r["close"],
-                            "등락(%)": f"{r['change_pct']:+.1f}%",
-                            "1주범위": week,
-                        })
-                    evt = st.dataframe(
-                        pd.DataFrame(records),
-                        use_container_width=True, hide_index=True,
-                        on_select="rerun", selection_mode="single-row",
-                        key=f"tbl_{key}",
-                    )
-                    if evt.selection.rows:
-                        _show_chart(records[evt.selection.rows[0]]["티커"])
-                else:
-                    st.info("해당 항목 없음 (관망 구간에 속하는 종목만 있거나 데이터 없음)")
-    else:
-        st.info("아직 분석 기록이 없습니다. 위 버튼을 눌러 첫 분석을 실행해보세요.")
+        def _build_weekly(category: str) -> list[dict]:
+            if not DAILY_DIR.exists():
+                return []
+            cutoff = _date.today() - _td(days=7)
+            ticker_data: dict[str, dict] = {}
+            for fp in sorted(DAILY_DIR.glob("*.json")):
+                try:
+                    file_date = _date.fromisoformat(fp.stem)
+                except ValueError:
+                    continue
+                if file_date < cutoff:
+                    continue
+                try:
+                    with open(fp, encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    continue
+                for r in data.get(category, []):
+                    t = r["ticker"]
+                    if t not in ticker_data:
+                        ticker_data[t] = {
+                            "count": 0, "scores": [],
+                            "last_date": "", "last_score": 0,
+                            "last_grade": "—", "last_rec": "—",
+                        }
+                    d = ticker_data[t]
+                    d["count"] += 1
+                    d["scores"].append(r.get("score", 0))
+                    if str(file_date) > d["last_date"]:
+                        d["last_date"]  = str(file_date)
+                        d["last_score"] = r.get("score", 0)
+                        d["last_grade"] = r.get("grade", "—")
+                        d["last_rec"]   = r.get("recommendation", "—")
+
+            out = []
+            for ticker, d in ticker_data.items():
+                avg = sum(d["scores"]) / len(d["scores"]) if d["scores"] else 0
+                out.append({
+                    "티커":   ticker,
+                    "출현(회)": d["count"],
+                    "평균점수": f"{avg:+.1f}",
+                    "최근점수": f"{d['last_score']:+.1f}",
+                    "최근등급": d["last_grade"],
+                    "최근추천": d["last_rec"],
+                    "_avg":   avg,
+                })
+            return sorted(out, key=lambda x: (-x["출현(회)"], -x["_avg"]))
+
+        def _weekly_df(records: list, tbl_key: str) -> None:
+            if not records:
+                st.info("위클리 데이터가 없습니다. 데일리 분석이 누적되면 자동으로 표시됩니다.")
+                return
+            display = [{k: v for k, v in r.items() if k != "_avg"} for r in records]
+            evt = st.dataframe(
+                pd.DataFrame(display),
+                use_container_width=True, hide_index=True,
+                on_select="rerun", selection_mode="single-row",
+                key=tbl_key,
+            )
+            if evt.selection.rows:
+                _show_chart(records[evt.selection.rows[0]]["티커"])
+
+        if not DAILY_DIR.exists() or not any(DAILY_DIR.glob("*.json")):
+            st.info("위클리 데이터가 없습니다. 데일리 분석이 누적되면 자동으로 표시됩니다.")
+        else:
+            file_dates = sorted(
+                fp.stem for fp in DAILY_DIR.glob("*.json")
+                if fp.stem >= str(_date.today() - _td(days=7))
+            )
+            st.caption(
+                f"최근 7일 데이터 기준  |  포함 날짜: **{', '.join(file_dates)}**  |  "
+                "행을 클릭하면 봉차트 팝업이 열립니다."
+            )
+            w1, w2, w3, w4, w5, w6 = st.tabs(
+                ["🏆 S&P 500 매수", "🔻 S&P 500 매도",
+                 "📊 ETF 매수",     "🔻 ETF 매도",
+                 "💎 외곽 매수",    "🔻 외곽 매도"]
+            )
+            for tab, key in zip(
+                [w1, w2, w3, w4, w5, w6],
+                ["sp500_buy", "sp500_sell", "etf_buy", "etf_sell", "outer_buy", "outer_sell"],
+            ):
+                with tab:
+                    _weekly_df(_build_weekly(key), f"w_tbl_{key}")
 
 
 # ══════════════════════════════════════════════════════════════════════
