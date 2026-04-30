@@ -62,6 +62,7 @@ def save_holdings(h: list):
     with open(HOLDINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(h, f, indent=2, ensure_ascii=False)
 
+
 # ══════════════════════════════════════════════════════════════════════
 # 앱 전역 설정
 # ══════════════════════════════════════════════════════════════════════
@@ -71,6 +72,94 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+# ── 봉차트 팝업 다이얼로그 ─────────────────────────────────────────────
+@st.dialog("📈 봉차트 (최근 100일)", width="large")
+def _show_chart(ticker: str):
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError:
+        st.error("plotly 패키지가 필요합니다: pip install plotly")
+        return
+
+    with st.spinner(f"{ticker} 데이터 로딩 중..."):
+        try:
+            raw = yf.download(ticker, period="8mo", auto_adjust=True, progress=False)
+            if isinstance(raw.columns, pd.MultiIndex):
+                try:
+                    df = raw.xs(ticker, axis=1, level=1)
+                except KeyError:
+                    df = raw.xs(ticker, axis=1, level=0)
+            else:
+                df = raw
+            df = df.dropna(how="all").tail(100)
+        except Exception as e:
+            st.error(f"데이터 로딩 실패: {e}")
+            return
+
+    if df.empty or len(df) < 5:
+        st.warning("차트를 그릴 데이터가 부족합니다.")
+        return
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        row_heights=[0.72, 0.28],
+        vertical_spacing=0.03,
+    )
+
+    # 캔들스틱
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df["Open"], high=df["High"],
+        low=df["Low"],   close=df["Close"],
+        increasing_line_color="#26a69a",
+        decreasing_line_color="#ef5350",
+        name=ticker,
+    ), row=1, col=1)
+
+    # 이동평균선 (추세선)
+    for n, color, dash, label in [
+        (20,  "#ff9800", "solid", "MA20"),
+        (60,  "#42a5f5", "solid", "MA60"),
+        (200, "#ec407a", "dash",  "MA200"),
+    ]:
+        ma = df["Close"].rolling(n).mean()
+        if ma.notna().sum() >= 5:
+            fig.add_trace(go.Scatter(
+                x=df.index, y=ma,
+                line=dict(color=color, width=1.3, dash=dash),
+                name=label, opacity=0.9,
+            ), row=1, col=1)
+
+    # 거래량
+    vol_colors = [
+        "#26a69a" if float(c) >= float(o) else "#ef5350"
+        for c, o in zip(df["Close"], df["Open"])
+    ]
+    fig.add_trace(go.Bar(
+        x=df.index, y=df["Volume"],
+        marker_color=vol_colors,
+        name="거래량", showlegend=False,
+    ), row=2, col=1)
+
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        height=530,
+        margin=dict(l=0, r=0, t=8, b=0),
+        legend=dict(orientation="h", y=1.02, x=0, font=dict(size=11)),
+        plot_bgcolor="#0e1117",
+        paper_bgcolor="#0e1117",
+        font=dict(color="#e0e0e0"),
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False)
+    fig.update_yaxes(gridcolor="#2a2a3a", zeroline=False)
+
+    st.markdown(f"**{ticker}** — 최근 {len(df)}거래일  |  MA20 🟠 MA60 🔵 MA200 🩷")
+    st.plotly_chart(fig, use_container_width=True)
+
 
 with st.sidebar:
     st.markdown("## 📊 주식 시그널 분석")
@@ -94,7 +183,6 @@ if page == "⚙️ 지표 설정":
     settings = load_settings()
     new: dict = {}
 
-    # 표 헤더
     h1, h2, h3 = st.columns([5, 2, 4])
     h1.markdown("**지표명**")
     h2.markdown("**현재 값**")
@@ -157,7 +245,7 @@ elif page == "📋 보유 종목":
     st.title("📋 보유 종목 관리")
     holdings = load_holdings()
 
-    # 현재 점수 조회 (캐시 활용)
+    # 현재 점수 조회
     scores: dict = {}
     if holdings:
         with st.spinner("보유 종목 최신 점수 조회 중..."):
@@ -179,7 +267,6 @@ elif page == "📋 보유 종목":
                 _dc = json.load(f)
             for _r in _dc.get("holdings_data", []):
                 div_map[_r["ticker"]] = _r
-            # holdings_data 에 없는 종목은 전체 카테고리에서 보완
             for _cat in ("growth_top", "royalty", "high_yield", "risk"):
                 for _r in _dc.get(_cat, []):
                     if _r["ticker"] not in div_map:
@@ -187,14 +274,15 @@ elif page == "📋 보유 종목":
         except Exception:
             pass
 
-    # 종목 목록 표
+    # 종목 목록
     if not holdings:
         st.info("등록된 보유 종목이 없습니다. 아래에서 추가해주세요.")
     else:
+        st.caption("티커 옆 📊 버튼을 누르면 봉차트 팝업이 열립니다.")
         st.markdown(f"**총 {len(holdings)}개 종목**")
         for col, label in zip(
-            st.columns([2, 5, 4, 3, 2]),
-            ["**티커**", "**종목명**", "**등급**", "**점수**", ""],
+            st.columns([2, 5, 4, 3, 1, 1]),
+            ["**티커**", "**종목명**", "**등급**", "**점수**", "", ""],
         ):
             col.markdown(label)
         st.divider()
@@ -202,12 +290,14 @@ elif page == "📋 보유 종목":
         delete_idx = None
         for i, h in enumerate(holdings):
             sc = scores.get(h["ticker"])
-            c1, c2, c3, c4, c5 = st.columns([2, 5, 4, 3, 2])
+            c1, c2, c3, c4, c5, c6 = st.columns([2, 5, 4, 3, 1, 1])
             c1.write(h["ticker"])
             c2.write(h.get("name", "—"))
             c3.write(sc["grade"] if sc else "—")
             c4.write(f"{sc['score']:+.1f}" if sc else "—")
-            if c5.button("🗑️", key=f"del_{i}", help="삭제"):
+            if c5.button("📊", key=f"chart_{i}", help="봉차트 보기"):
+                _show_chart(h["ticker"])
+            if c6.button("🗑️", key=f"del_{i}", help="삭제"):
                 delete_idx = i
 
         if delete_idx is not None:
@@ -252,7 +342,15 @@ elif page == "📋 보유 종목":
                     "배당컷":      "✂컷" if dr.get("had_cut") else "—",
                 })
             if div_records:
-                st.dataframe(pd.DataFrame(div_records), use_container_width=True, hide_index=True)
+                st.caption("행을 클릭하면 해당 종목 봉차트가 열립니다.")
+                evt = st.dataframe(
+                    pd.DataFrame(div_records),
+                    use_container_width=True, hide_index=True,
+                    on_select="rerun", selection_mode="single-row",
+                    key="hold_div_tbl",
+                )
+                if evt.selection.rows:
+                    _show_chart(div_records[evt.selection.rows[0]]["티커"])
             else:
                 st.caption("보유 종목이 배당 데이터에 없습니다.")
 
@@ -332,7 +430,8 @@ elif page == "🚀 분석 실행":
 
         st.caption(
             f"분석일: **{last.get('date', '—')}**  |  "
-            f"분석 종목: **{last.get('total', 0):,}개**"
+            f"분석 종목: **{last.get('total', 0):,}개**  |  "
+            "행을 클릭하면 봉차트 팝업이 열립니다."
         )
 
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
@@ -364,7 +463,14 @@ elif page == "🚀 분석 실행":
                             "등락(%)": f"{r['change_pct']:+.1f}%",
                             "1주범위": week,
                         })
-                    st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+                    evt = st.dataframe(
+                        pd.DataFrame(records),
+                        use_container_width=True, hide_index=True,
+                        on_select="rerun", selection_mode="single-row",
+                        key=f"tbl_{key}",
+                    )
+                    if evt.selection.rows:
+                        _show_chart(records[evt.selection.rows[0]]["티커"])
                 else:
                     st.info("해당 항목 없음 (관망 구간에 속하는 종목만 있거나 데이터 없음)")
     else:
@@ -375,20 +481,21 @@ elif page == "🚀 분석 실행":
 # 4. 배당 분석
 # ══════════════════════════════════════════════════════════════════════
 elif page == "💰 배당 분석":
-    st.title("💰 배당주 주간 리포트")
+    st.title("💰 배당주 일일 리포트")
 
     if not LAST_DIVIDEND.exists():
-        st.info("아직 배당 분석 기록이 없습니다. 매주 일요일 22:00 KST에 자동 실행됩니다.")
+        st.info("아직 배당 분석 기록이 없습니다. 매일 22:00 KST에 자동 실행됩니다.")
     else:
         with open(LAST_DIVIDEND, encoding="utf-8") as f:
             div_data = json.load(f)
 
         st.caption(
             f"분석일: **{div_data.get('date', '—')}**  |  "
-            f"배당 지급 종목: **{div_data.get('total', 0):,}개**"
+            f"배당 지급 종목: **{div_data.get('total', 0):,}개**  |  "
+            "행을 클릭하면 봉차트 팝업이 열립니다."
         )
 
-        def _div_table(rows: list) -> None:
+        def _div_table(rows: list, tbl_key: str) -> None:
             if not rows:
                 st.info("해당 항목 없음")
                 return
@@ -399,8 +506,8 @@ elif page == "💰 배당 분석":
                 elif consec >= 25: king = "🏆귀족"
                 elif consec >= 10: king = "⭐챔피언"
                 else:              king = ""
-                dgr10 = r.get("dgr10")
-                dgr5  = r.get("dgr5")
+                dgr10  = r.get("dgr10")
+                dgr5   = r.get("dgr5")
                 payout = r.get("payout_ratio")
                 records.append({
                     "티커":         r["ticker"],
@@ -408,12 +515,19 @@ elif page == "💰 배당 분석":
                     "점수":         f"{r['score']:+.0f}",
                     "10Y DGR":     f"{dgr10:.0f}%" if dgr10 is not None else "N/A",
                     "5Y DGR":      f"{dgr5:.0f}%"  if dgr5  is not None else "N/A",
-                    "연속증가":     f"{consec}년 {king}",
+                    "연속증가":     f"{consec}년 {king}".strip(),
                     "배당률(TTM)": f"{r.get('yield_ttm', 0):.1f}%",
                     "Payout":      f"{payout*100:.0f}%" if payout is not None else "N/A",
                     "배당컷":       "✂컷" if r.get("had_cut") else "—",
                 })
-            st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+            evt = st.dataframe(
+                pd.DataFrame(records),
+                use_container_width=True, hide_index=True,
+                on_select="rerun", selection_mode="single-row",
+                key=tbl_key,
+            )
+            if evt.selection.rows:
+                _show_chart(records[evt.selection.rows[0]]["티커"])
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "🚀 배당 성장 TOP 15",
@@ -423,17 +537,17 @@ elif page == "💰 배당 분석":
             "⭐ 내 보유 종목",
         ])
         with tab1:
-            _div_table(div_data.get("growth_top", []))
+            _div_table(div_data.get("growth_top", []), "div_growth")
         with tab2:
-            _div_table(div_data.get("royalty", []))
+            _div_table(div_data.get("royalty", []),    "div_royalty")
         with tab3:
-            _div_table(div_data.get("high_yield", []))
+            _div_table(div_data.get("high_yield", []), "div_yield")
         with tab4:
-            _div_table(div_data.get("risk", []))
+            _div_table(div_data.get("risk", []),       "div_risk")
         with tab5:
             held = div_data.get("holdings_data", [])
             if held:
-                _div_table(held)
+                _div_table(held, "div_held")
             else:
                 st.info("보유 종목 배당 데이터가 없습니다. 보유 종목을 등록하거나 배당 분석을 실행해주세요.")
 
