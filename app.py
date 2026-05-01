@@ -4,7 +4,6 @@
 """
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -16,9 +15,6 @@ import yfinance as yf
 # ── 경로 설정 ─────────────────────────────────────────────────────────
 BASE_DIR    = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
-
-# Render 환경 여부 (subprocess 분석 실행 비활성화용)
-ON_RENDER = bool(os.getenv("RENDER"))
 
 SETTINGS_FILE   = BASE_DIR / "settings.json"
 HOLDINGS_FILE   = BASE_DIR / "holdings.json"
@@ -351,43 +347,29 @@ elif page == "🚀 분석 실행":
 
     # ── 데일리 ────────────────────────────────────────────────────────
     with daily_tab:
-        st.caption("Russell 3000 전체 종목을 분석해 텔레그램으로 전송합니다.")
+        st.caption("Russell 3000 전체 종목을 분석합니다.")
         c1, c2 = st.columns([2, 8])
-        if ON_RENDER:
-            c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True, disabled=True)
-            c2.warning("☁️ 클라우드 환경에서는 직접 실행 불가 — GitHub Actions가 매일 오전 6:30 KST 자동 실행합니다.")
-            run_btn = False
-        else:
-            run_btn = c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True)
-            c2.info("⏱ 첫 실행 ~20분  /  캐시 있을 때 ~2분  /  실행 중 페이지 이동 시 중단됩니다.")
+        run_btn = c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True)
+        c2.info("⏱ 첫 실행 ~20분  /  캐시 있을 때 ~2분  /  실행 중 페이지 이동 시 중단됩니다.")
 
         if run_btn:
-            from collections import deque
-            log_box = st.empty()
-            lines: deque = deque(maxlen=40)
-            env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-            proc = subprocess.Popen(
-                [sys.executable, str(BASE_DIR / "main.py")],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                bufsize=1,
-                cwd=str(BASE_DIR),
-                env=env,
-            )
-            t0 = time.time()
-            for line in proc.stdout:
-                lines.append(line)
-                log_box.code("".join(lines), language="")
-            proc.wait()
-            elapsed = int(time.time() - t0)
-            if proc.returncode == 0:
-                st.success(f"✅ 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
-                _load_json.clear()
-                st.rerun()
-            else:
-                st.error("❌ 오류 발생. 위 로그를 확인해주세요.")
+            import io, contextlib, importlib
+            buf = io.StringIO()
+            t0  = time.time()
+            with st.spinner("분석 중... (약 20분 소요, 완료 시 결과가 표시됩니다)"):
+                try:
+                    import main as _main_mod
+                    importlib.reload(_main_mod)
+                    with contextlib.redirect_stdout(buf):
+                        _main_mod.main()
+                    elapsed = int(time.time() - t0)
+                    st.success(f"✅ 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
+                    st.code(buf.getvalue(), language="")
+                    _load_json.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 오류 발생: {e}")
+                    st.code(buf.getvalue(), language="")
 
         last = _read_cache(LAST_RESULTS)
         if last:
@@ -524,41 +506,27 @@ elif page == "💰 배당 분석":
 
     # ── 수동 실행 버튼 ────────────────────────────────────────────────
     dc1, dc2 = st.columns([2, 8])
-    if ON_RENDER:
-        dc1.button("▶ 배당 분석 실행", type="primary", use_container_width=True, disabled=True)
-        dc2.warning("☁️ 클라우드 환경에서는 직접 실행 불가 — GitHub Actions가 매일 22:00 KST 자동 실행합니다.")
-        div_run_btn = False
-    else:
-        div_run_btn = dc1.button("▶ 배당 분석 실행", type="primary", use_container_width=True)
-        dc2.info("⏱ ~30분 소요 (전체 종목 배당 히스토리 다운로드)  /  매일 22:00 KST 자동 실행")
+    div_run_btn = dc1.button("▶ 배당 분석 실행", type="primary", use_container_width=True)
+    dc2.info("⏱ ~30분 소요 (전체 종목 배당 히스토리 다운로드)  /  매일 오전 6:30 KST 자동 실행")
 
     if div_run_btn:
-        from collections import deque
-        div_log_box = st.empty()
-        div_lines: deque = deque(maxlen=30)
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        proc = subprocess.Popen(
-            [sys.executable, str(BASE_DIR / "weekly_dividend.py")],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            bufsize=1,
-            cwd=str(BASE_DIR),
-            env=env,
-        )
-        t0 = time.time()
-        for line in proc.stdout:
-            div_lines.append(line)
-            div_log_box.code("".join(div_lines), language="")
-        proc.wait()
-        elapsed = int(time.time() - t0)
-        if proc.returncode == 0:
-            st.success(f"✅ 배당 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
-            _load_json.clear()
-            st.rerun()
-        else:
-            st.error("❌ 오류 발생. 위 로그를 확인해주세요.")
+        import io, contextlib, importlib
+        buf = io.StringIO()
+        t0  = time.time()
+        with st.spinner("배당 분석 중... (약 30분 소요, 완료 시 결과가 표시됩니다)"):
+            try:
+                import weekly_dividend
+                importlib.reload(weekly_dividend)
+                with contextlib.redirect_stdout(buf):
+                    weekly_dividend.main()
+                elapsed = int(time.time() - t0)
+                st.success(f"✅ 배당 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
+                st.code(buf.getvalue(), language="")
+                _load_json.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ 오류 발생: {e}")
+                st.code(buf.getvalue(), language="")
 
     st.markdown("---")
 
