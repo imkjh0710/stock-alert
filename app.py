@@ -234,7 +234,7 @@ if page == "⚙️ 지표 설정":
     row("배당성장률 계산 기간 (년)  →  장기/단기 CAGR 기준",        "div_years",            1,   20)
     row("최소 배당성장률 (%)  →  미만 종목 제외",                    "div_min_dgr",        -50,   50)
     row("최소 배당률 (%)  →  미만 종목 제외",                        "div_min_yield",         0,   10)
-    row("최대 배당성향 (%)  →  초과 종목 제외 (이익 대비 배당 비율)", "div_max_payout",       50,  200)
+    row("최대 FCF 배당성향 (%)  →  초과 종목 제외 (잉여현금 대비 배당)", "div_max_payout",     50,  200)
     row("최소 연속 배당 증가 (년)  →  미만 종목 제외",               "div_min_consec",        0,   50)
     row("최소 주가성장률 (%)  →  미만 종목 제외 (-50 = 사실상 미적용)", "div_min_price_growth", -50, 50)
 
@@ -357,8 +357,7 @@ elif page == "📋 보유 종목":
                     f"배당성장률({ly}년·연평균)":     f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
                     f"배당성장률({sy}년·연평균)":     f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
                     "연속 배당 증가":                  f"{consec}년 {king}".strip(),
-                    "배당성향(이익 대비)":             f"{payout*100:.0f}%" if payout is not None else "N/A",
-                    "잉여현금흐름 대비 배당":           f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
+                    "FCF 배당성향":                   f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
                     f"주가성장률({ly}년·연평균)":      f"{pg:+.1f}%" if pg is not None else "N/A",
                     "배당컷":                          "✂컷" if dr.get("had_cut") else "—",
                 })
@@ -682,8 +681,7 @@ elif page == "💰 배당 분석":
                     f"배당성장률({sy}년·연평균)":      f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
                     "연속 배당 증가":                   f"{consec}년 {king}".strip(),
                     "배당률(최근1년)":                  f"{r.get('yield_ttm', 0):.1f}%",
-                    "배당성향(이익 대비)":              f"{payout*100:.0f}%" if payout is not None else "N/A",
-                    "잉여현금흐름 대비 배당":            f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
+                    "FCF 배당성향":                    f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
                     f"주가성장률({ly}년·연평균)":       f"{pg:+.1f}%" if pg is not None else "N/A",
                     "배당컷":                           "✂컷" if r.get("had_cut") else "—",
                 })

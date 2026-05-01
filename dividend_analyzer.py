@@ -242,16 +242,13 @@ def score_dividend(metrics: dict) -> tuple[float, str]:
     elif yld >= 3 and payout_ok: score += 1
     if avg5 > 0 and yld > avg5:  score += 1  # 현재 저평가 (yield 높음)
 
-    # ── 5. Payout 과다 ────────────────────────────────────────────────
-    if payout is not None:
-        if   payout > 1.0: score -= 5
-        elif payout > 0.9: score -= 3
-
-    # ── 6. FCF 기반 지속가능성 ────────────────────────────────────────
+    # ── 5. FCF 배당성향 기반 지속가능성 ──────────────────────────────
     if fcf_pay is not None:
-        if   fcf_pay < 0.50: score += 1   # FCF 50% 이하 → 매우 안전
-        elif fcf_pay > 1.50: score -= 3   # FCF 초과 → 위험
-        elif fcf_pay > 1.00: score -= 1   # FCF 근접 → 주의
+        if   fcf_pay < 0.30: score += 2   # FCF 30% 이하 → 매우 안전
+        elif fcf_pay < 0.50: score += 1   # FCF 50% 이하 → 안전
+        elif fcf_pay > 2.00: score -= 5   # FCF 2배 초과 → 매우 위험
+        elif fcf_pay > 1.50: score -= 3   # FCF 1.5배 초과 → 위험
+        elif fcf_pay > 1.00: score -= 1   # FCF 초과 → 주의
 
     if   score >= 15: grade = "🌟 최우수"
     elif score >= 10: grade = "🟢🟢 우수"
@@ -365,7 +362,7 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
         r for r in results
         if (r.get("yield_ttm") or 0) >= min_yield
         and (min_consec == 0 or r.get("consecutive_growth", 0) >= min_consec)
-        and (r.get("payout_ratio") is None or r.get("payout_ratio") <= max_payout)
+        and (r.get("fcf_payout") is None or r.get("fcf_payout") <= max_payout)
         and (r.get("dgr_long") is None or (r.get("dgr_long") or -999) >= min_dgr)
         and (min_price_growth <= -50 or r.get("price_growth_cagr") is None
              or (r.get("price_growth_cagr") or -999) >= min_price_growth)
