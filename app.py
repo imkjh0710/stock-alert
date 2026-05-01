@@ -14,8 +14,11 @@ import streamlit as st
 import yfinance as yf
 
 # ── 경로 설정 ─────────────────────────────────────────────────────────
-BASE_DIR     = Path(__file__).parent
+BASE_DIR    = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
+
+# Render 환경 여부 (subprocess 분석 실행 비활성화용)
+ON_RENDER = bool(os.getenv("RENDER"))
 
 SETTINGS_FILE   = BASE_DIR / "settings.json"
 HOLDINGS_FILE   = BASE_DIR / "holdings.json"
@@ -88,7 +91,7 @@ def _fetch_holding_scores(tickers: tuple) -> dict:
     try:
         from fetcher import fetch_batch, apply_quality_filter
         from scorer import score_all
-        raw      = fetch_batch(list(tickers), period="1y", chunk_size=max(len(tickers), 1))
+        raw      = fetch_batch(list(tickers), period="6mo", chunk_size=max(len(tickers), 1))
         filtered = apply_quality_filter(raw)
         return {r["ticker"]: r for r in score_all(filtered)}
     except Exception:
@@ -107,6 +110,24 @@ st.set_page_config(
 
 
 # ── 봉차트 팝업 다이얼로그 ─────────────────────────────────────────────
+@st.cache_data(ttl=3600)
+def _fetch_chart_df(ticker: str) -> pd.DataFrame | None:
+    """봉차트용 OHLCV 데이터 — 같은 티커는 1시간 캐시."""
+    try:
+        raw = yf.download(ticker, period="8mo", auto_adjust=True, progress=False)
+        if isinstance(raw.columns, pd.MultiIndex):
+            try:
+                df = raw.xs(ticker, axis=1, level=1)
+            except KeyError:
+                df = raw.xs(ticker, axis=1, level=0)
+        else:
+            df = raw
+        df = df.dropna(how="all").tail(100)
+        return df if not df.empty and len(df) >= 5 else None
+    except Exception:
+        return None
+
+
 @st.dialog("📈 봉차트 (최근 100일)", width="large")
 def _show_chart(ticker: str):
     try:
@@ -117,21 +138,9 @@ def _show_chart(ticker: str):
         return
 
     with st.spinner(f"{ticker} 데이터 로딩 중..."):
-        try:
-            raw = yf.download(ticker, period="8mo", auto_adjust=True, progress=False)
-            if isinstance(raw.columns, pd.MultiIndex):
-                try:
-                    df = raw.xs(ticker, axis=1, level=1)
-                except KeyError:
-                    df = raw.xs(ticker, axis=1, level=0)
-            else:
-                df = raw
-            df = df.dropna(how="all").tail(100)
-        except Exception as e:
-            st.error(f"데이터 로딩 실패: {e}")
-            return
+        df = _fetch_chart_df(ticker)
 
-    if df.empty or len(df) < 5:
+    if df is None:
         st.warning("차트를 그릴 데이터가 부족합니다.")
         return
 
@@ -445,8 +454,13 @@ elif page == "🚀 분석 실행":
     with daily_tab:
         st.caption("Russell 3000 전체 종목을 분석해 텔레그램으로 전송합니다.")
         c1, c2 = st.columns([2, 8])
-        run_btn = c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True)
-        c2.info("⏱ 첫 실행 ~20분  /  캐시 있을 때 ~2분  /  실행 중 페이지 이동 시 중단됩니다.")
+        if ON_RENDER:
+            c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True, disabled=True)
+            c2.warning("☁️ 클라우드 환경에서는 직접 실행 불가 — GitHub Actions가 매일 오전 6:30 KST 자동 실행합니다.")
+            run_btn = False
+        else:
+            run_btn = c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True)
+            c2.info("⏱ 첫 실행 ~20분  /  캐시 있을 때 ~2분  /  실행 중 페이지 이동 시 중단됩니다.")
 
         if run_btn:
             from collections import deque
@@ -626,8 +640,13 @@ elif page == "💰 배당 분석":
 
     # ── 수동 실행 버튼 ────────────────────────────────────────────────
     dc1, dc2 = st.columns([2, 8])
-    div_run_btn = dc1.button("▶ 배당 분석 실행", type="primary", use_container_width=True)
-    dc2.info("⏱ ~30분 소요 (전체 종목 배당 히스토리 다운로드)  /  매일 22:00 KST 자동 실행")
+    if ON_RENDER:
+        dc1.button("▶ 배당 분석 실행", type="primary", use_container_width=True, disabled=True)
+        dc2.warning("☁️ 클라우드 환경에서는 직접 실행 불가 — GitHub Actions가 매일 22:00 KST 자동 실행합니다.")
+        div_run_btn = False
+    else:
+        div_run_btn = dc1.button("▶ 배당 분석 실행", type="primary", use_container_width=True)
+        dc2.info("⏱ ~30분 소요 (전체 종목 배당 히스토리 다운로드)  /  매일 22:00 KST 자동 실행")
 
     if div_run_btn:
         from collections import deque

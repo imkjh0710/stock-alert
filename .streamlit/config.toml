@@ -1,0 +1,9 @@
+[server]
+fileWatcherType = "none"   # 파일 변경 감시 비활성화 (CPU 절약)
+maxUploadSize = 5
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+fastReruns = true

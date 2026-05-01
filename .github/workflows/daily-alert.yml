@@ -27,6 +27,9 @@ jobs:
       - name: Run analysis
         run: python main.py
 
+      - name: Cleanup old daily cache (keep 14 days)
+        run: find cache/daily -name "*.json" -mtime +14 -delete 2>/dev/null || true
+
       - name: Commit updated cache
         run: |
           git config user.name "github-actions[bot]"
