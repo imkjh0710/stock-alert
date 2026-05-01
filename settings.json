@@ -1,0 +1,22 @@
+{
+  "rsi_overbought": 70,
+  "rsi_overbought_strong": 75,
+  "rsi_oversold": 30,
+  "rsi_oversold_strong": 25,
+  "macd_fast": 12,
+  "macd_slow": 26,
+  "macd_signal": 9,
+  "ma_short": 20,
+  "ma_mid": 60,
+  "ma_long": 200,
+  "volume_t1": 2,
+  "volume_t2": 3,
+  "volume_t3": 5,
+  "vp_window": 20,
+  "div_years": 5,
+  "div_min_dgr": 5,
+  "div_min_yield": 3,
+  "div_max_payout": 85,
+  "div_min_consec": 5,
+  "div_min_price_growth": 20
+}

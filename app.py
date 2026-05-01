@@ -37,15 +37,49 @@ DEFAULT_SETTINGS = {
     "volume_t1":              2,
     "volume_t2":              3,
     "volume_t3":              5,
-    "vp_window":             90,
+    "vp_window":             20,
     # ── 배당 분석 설정 ─────────────────────────────────────────
     "div_years":              5,   # 배당성장률 계산 기간 (년)
-    "div_min_dgr":            0,   # 최소 배당성장률 (%)
-    "div_min_yield":          1,   # 최소 배당률 (%)
+    "div_min_dgr":            5,   # 최소 배당성장률 (%)
+    "div_min_yield":          3,   # 최소 배당률 (%)
     "div_max_payout":        85,   # 최대 Payout 비율 (%)
-    "div_min_consec":         3,   # 최소 연속 배당 증가 연수
-    "div_min_price_growth": -50,   # 최소 주가성장률 (%, -50 = 사실상 미적용)
+    "div_min_consec":         5,   # 최소 연속 배당 증가 연수
+    "div_min_price_growth":  20,   # 최소 주가성장률 (%)
 }
+
+# ── GitHub 연동 (Render 재배포 후에도 설정/보유 종목 유지) ────────────
+_GH_TOKEN = os.getenv("GITHUB_TOKEN", "")
+_GH_REPO  = os.getenv("GITHUB_REPO", "")   # 예: "imkjh0710/stock-alert"
+
+def _gh_push(rel_path: str, content: str, message: str) -> None:
+    """파일을 GitHub 레포에 커밋 — 토큰이 없으면 무시."""
+    if not _GH_TOKEN or not _GH_REPO:
+        return
+    import base64
+    import requests as _req
+    api     = f"https://api.github.com/repos/{_GH_REPO}/contents/{rel_path}"
+    headers = {"Authorization": f"Bearer {_GH_TOKEN}",
+               "Accept": "application/vnd.github+json"}
+    r   = _req.get(api, headers=headers, timeout=10)
+    sha = r.json().get("sha") if r.ok else None
+    body: dict = {"message": message,
+                  "content": base64.b64encode(content.encode()).decode()}
+    if sha:
+        body["sha"] = sha
+    _req.put(api, headers=headers, json=body, timeout=10)
+
+def _gh_trigger(workflow_file: str) -> bool:
+    """GitHub Actions workflow_dispatch 트리거. 성공 시 True."""
+    if not _GH_TOKEN or not _GH_REPO:
+        return False
+    import requests as _req
+    api = (f"https://api.github.com/repos/{_GH_REPO}"
+           f"/actions/workflows/{workflow_file}/dispatches")
+    headers = {"Authorization": f"Bearer {_GH_TOKEN}",
+               "Accept": "application/vnd.github+json"}
+    r = _req.post(api, headers=headers, json={"ref": "main"}, timeout=10)
+    return r.status_code == 204
+
 
 # ── 유틸 함수 ─────────────────────────────────────────────────────────
 def load_settings() -> dict:
@@ -55,8 +89,10 @@ def load_settings() -> dict:
     return DEFAULT_SETTINGS.copy()
 
 def save_settings(s: dict):
+    content = json.dumps(s, indent=2, ensure_ascii=False)
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(s, f, indent=2, ensure_ascii=False)
+        f.write(content)
+    _gh_push("settings.json", content, "chore: update settings [skip ci]")
 
 def load_holdings() -> list:
     if HOLDINGS_FILE.exists():
@@ -65,8 +101,10 @@ def load_holdings() -> list:
     return []
 
 def save_holdings(h: list):
+    content = json.dumps(h, indent=2, ensure_ascii=False)
     with open(HOLDINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(h, f, indent=2, ensure_ascii=False)
+        f.write(content)
+    _gh_push("holdings.json", content, "chore: update holdings [skip ci]")
 
 
 # ── 캐시 함수 (메모리 최적화) ─────────────────────────────────────────
@@ -350,26 +388,35 @@ elif page == "🚀 분석 실행":
         st.caption("Russell 3000 전체 종목을 분석합니다.")
         c1, c2 = st.columns([2, 8])
         run_btn = c1.button("▶ 지금 분석 돌리기", type="primary", use_container_width=True)
-        c2.info("⏱ 첫 실행 ~20분  /  캐시 있을 때 ~2분  /  실행 중 페이지 이동 시 중단됩니다.")
+        if _GH_TOKEN:
+            c2.info("⏱ GitHub Actions에서 실행 (~20분) — 완료 후 앱이 자동 업데이트됩니다.")
+        else:
+            c2.warning("⚠️ GITHUB_TOKEN 미설정 — 로컬에서 직접 실행합니다 (~20분, 메모리 주의).")
 
         if run_btn:
-            import io, contextlib, importlib
-            buf = io.StringIO()
-            t0  = time.time()
-            with st.spinner("분석 중... (약 20분 소요, 완료 시 결과가 표시됩니다)"):
-                try:
-                    import main as _main_mod
-                    importlib.reload(_main_mod)
-                    with contextlib.redirect_stdout(buf):
-                        _main_mod.main()
-                    elapsed = int(time.time() - t0)
-                    st.success(f"✅ 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
-                    st.code(buf.getvalue(), language="")
-                    _load_json.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ 오류 발생: {e}")
-                    st.code(buf.getvalue(), language="")
+            if _GH_TOKEN:
+                if _gh_trigger("daily-alert.yml"):
+                    st.success("✅ GitHub Actions 실행 요청 완료! 약 20분 후 결과가 반영됩니다.")
+                else:
+                    st.error("❌ 트리거 실패 — GitHub 토큰 권한(workflow)을 확인해주세요.")
+            else:
+                import io, contextlib, importlib
+                buf = io.StringIO()
+                t0  = time.time()
+                with st.spinner("분석 중... (약 20분 소요)"):
+                    try:
+                        import main as _main_mod
+                        importlib.reload(_main_mod)
+                        with contextlib.redirect_stdout(buf):
+                            _main_mod.main()
+                        elapsed = int(time.time() - t0)
+                        st.success(f"✅ 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
+                        st.code(buf.getvalue(), language="")
+                        _load_json.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 오류 발생: {e}")
+                        st.code(buf.getvalue(), language="")
 
         last = _read_cache(LAST_RESULTS)
         if last:
@@ -507,26 +554,35 @@ elif page == "💰 배당 분석":
     # ── 수동 실행 버튼 ────────────────────────────────────────────────
     dc1, dc2 = st.columns([2, 8])
     div_run_btn = dc1.button("▶ 배당 분석 실행", type="primary", use_container_width=True)
-    dc2.info("⏱ ~30분 소요 (전체 종목 배당 히스토리 다운로드)  /  매일 오전 6:30 KST 자동 실행")
+    if _GH_TOKEN:
+        dc2.info("⏱ GitHub Actions에서 실행 (~30분) — 완료 후 앱이 자동 업데이트됩니다.")
+    else:
+        dc2.warning("⚠️ GITHUB_TOKEN 미설정 — 로컬에서 직접 실행합니다 (~30분, 메모리 주의).")
 
     if div_run_btn:
-        import io, contextlib, importlib
-        buf = io.StringIO()
-        t0  = time.time()
-        with st.spinner("배당 분석 중... (약 30분 소요, 완료 시 결과가 표시됩니다)"):
-            try:
-                import weekly_dividend
-                importlib.reload(weekly_dividend)
-                with contextlib.redirect_stdout(buf):
-                    weekly_dividend.main()
-                elapsed = int(time.time() - t0)
-                st.success(f"✅ 배당 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
-                st.code(buf.getvalue(), language="")
-                _load_json.clear()
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ 오류 발생: {e}")
-                st.code(buf.getvalue(), language="")
+        if _GH_TOKEN:
+            if _gh_trigger("daily-alert.yml"):
+                st.success("✅ GitHub Actions 실행 요청 완료! 약 30분 후 결과가 반영됩니다.")
+            else:
+                st.error("❌ 트리거 실패 — GitHub 토큰 권한(workflow)을 확인해주세요.")
+        else:
+            import io, contextlib, importlib
+            buf = io.StringIO()
+            t0  = time.time()
+            with st.spinner("배당 분석 중... (약 30분 소요)"):
+                try:
+                    import weekly_dividend
+                    importlib.reload(weekly_dividend)
+                    with contextlib.redirect_stdout(buf):
+                        weekly_dividend.main()
+                    elapsed = int(time.time() - t0)
+                    st.success(f"✅ 배당 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
+                    st.code(buf.getvalue(), language="")
+                    _load_json.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 오류 발생: {e}")
+                    st.code(buf.getvalue(), language="")
 
     st.markdown("---")
 
