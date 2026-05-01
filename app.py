@@ -39,6 +39,11 @@ DEFAULT_SETTINGS = {
     "volume_t2":              3,
     "volume_t3":              5,
     "vp_window":             90,
+    # ── 배당 분석 설정 ─────────────────────────────────────────
+    "div_years":              5,   # DGR 장기 계산 기간 (년)
+    "div_min_yield":          1,   # 최소 배당률 (%)
+    "div_max_payout":        85,   # 최대 Payout 비율 (%)
+    "div_min_consec":         3,   # 최소 연속 배당 증가 연수
 }
 
 # ── 유틸 함수 ─────────────────────────────────────────────────────────
@@ -223,6 +228,12 @@ if page == "⚙️ 지표 설정":
     st.markdown("#### 매물대 (Volume Profile)")
     row("분석 윈도우 (영업일)",  "vp_window",  20, 252)
 
+    st.markdown("#### 배당 분석")
+    row("DGR 장기 기간 (년)  →  성장률 계산 기준",   "div_years",     1, 20)
+    row("최소 배당률 (%)  →  미만 종목 제외",         "div_min_yield",  0, 10)
+    row("최대 Payout 비율 (%)  →  초과 종목 제외",   "div_max_payout", 50, 200)
+    row("최소 연속 증가 연수  →  미만 종목 제외",      "div_min_consec", 0, 50)
+
     st.markdown("---")
     c_save, c_reset, _ = st.columns([2, 2, 6])
 
@@ -327,19 +338,23 @@ elif page == "📋 보유 종목":
                 elif consec >= 25: king = "🏆귀족"
                 elif consec >= 10: king = "⭐챔피언"
                 else:              king = ""
-                dgr10  = dr.get("dgr10")
-                dgr5   = dr.get("dgr5")
-                payout = dr.get("payout_ratio")
+                dgr_l   = dr.get("dgr_long")
+                dgr_s   = dr.get("dgr_short")
+                ly      = dr.get("dgr_long_years",  5)
+                sy      = dr.get("dgr_short_years", 2)
+                payout  = dr.get("payout_ratio")
+                fcf_pay = dr.get("fcf_payout")
                 div_records.append({
-                    "티커":        t,
-                    "배당등급":    dr.get("grade", "—"),
-                    "배당점수":    f"{dr['score']:+.0f}",
-                    "배당률(TTM)": f"{dr.get('yield_ttm', 0):.1f}%",
-                    "10Y DGR":    f"{dgr10:.0f}%" if dgr10 is not None else "N/A",
-                    "5Y DGR":     f"{dgr5:.0f}%"  if dgr5  is not None else "N/A",
-                    "연속증가":    f"{consec}년 {king}".strip(),
-                    "Payout":     f"{payout*100:.0f}%" if payout is not None else "N/A",
-                    "배당컷":      "✂컷" if dr.get("had_cut") else "—",
+                    "티커":            t,
+                    "배당등급":        dr.get("grade", "—"),
+                    "배당점수":        f"{dr['score']:+.0f}",
+                    "배당률(TTM)":     f"{dr.get('yield_ttm', 0):.1f}%",
+                    f"DGR({ly}Y)":    f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
+                    f"DGR({sy}Y)":    f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
+                    "연속증가":        f"{consec}년 {king}".strip(),
+                    "Payout":         f"{payout*100:.0f}%" if payout is not None else "N/A",
+                    "FCF Payout":     f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
+                    "배당컷":          "✂컷" if dr.get("had_cut") else "—",
                 })
             if div_records:
                 st.caption("행을 클릭하면 해당 종목 봉차트가 열립니다.")
@@ -368,9 +383,27 @@ elif page == "📋 보유 종목":
         else:
             with st.spinner(f"{ticker_in} 정보 조회 중..."):
                 try:
-                    info  = yf.Ticker(ticker_in).info
-                    name  = info.get("longName") or info.get("shortName") or ticker_in
-                    price = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose")
+                    ticker_obj = yf.Ticker(ticker_in)
+                    # fast_info 로 가격 확인 (가벼운 API — rate limit 회피)
+                    price = None
+                    try:
+                        fi    = ticker_obj.fast_info
+                        price = getattr(fi, "last_price", None) or getattr(fi, "previous_close", None)
+                    except Exception:
+                        pass
+                    # fast_info 실패 시 history 로 폴백
+                    if not price:
+                        _h = ticker_obj.history(period="5d")
+                        if not _h.empty:
+                            price = float(_h["Close"].iloc[-1])
+                    # 종목명은 별도 조회 (실패해도 티커로 대체)
+                    name = ticker_in
+                    try:
+                        info = ticker_obj.info
+                        name = info.get("longName") or info.get("shortName") or ticker_in
+                    except Exception:
+                        pass
+
                     if price:
                         holdings.append({"ticker": ticker_in, "name": name})
                         save_holdings(holdings)
@@ -572,8 +605,41 @@ elif page == "🚀 분석 실행":
 elif page == "💰 배당 분석":
     st.title("💰 배당주 일일 리포트")
 
+    # ── 수동 실행 버튼 ────────────────────────────────────────────────
+    dc1, dc2 = st.columns([2, 8])
+    div_run_btn = dc1.button("▶ 배당 분석 실행", type="primary", use_container_width=True)
+    dc2.info("⏱ ~30분 소요 (전체 종목 배당 히스토리 다운로드)  /  매일 22:00 KST 자동 실행")
+
+    if div_run_btn:
+        div_log_box = st.empty()
+        div_lines: list[str] = []
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        proc = subprocess.Popen(
+            [sys.executable, str(BASE_DIR / "weekly_dividend.py")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+            cwd=str(BASE_DIR),
+            env=env,
+        )
+        t0 = time.time()
+        for line in proc.stdout:
+            div_lines.append(line)
+            div_log_box.code("".join(div_lines[-30:]), language="")
+        proc.wait()
+        elapsed = int(time.time() - t0)
+        if proc.returncode == 0:
+            st.success(f"✅ 배당 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
+            st.rerun()
+        else:
+            st.error("❌ 오류 발생. 위 로그를 확인해주세요.")
+
+    st.markdown("---")
+
     if not LAST_DIVIDEND.exists():
-        st.info("아직 배당 분석 기록이 없습니다. 매일 22:00 KST에 자동 실행됩니다.")
+        st.info("아직 배당 분석 기록이 없습니다. 위 버튼을 눌러 첫 분석을 실행해보세요.")
     else:
         with open(LAST_DIVIDEND, encoding="utf-8") as f:
             div_data = json.load(f)
@@ -595,19 +661,23 @@ elif page == "💰 배당 분석":
                 elif consec >= 25: king = "🏆귀족"
                 elif consec >= 10: king = "⭐챔피언"
                 else:              king = ""
-                dgr10  = r.get("dgr10")
-                dgr5   = r.get("dgr5")
-                payout = r.get("payout_ratio")
+                dgr_l   = r.get("dgr_long")
+                dgr_s   = r.get("dgr_short")
+                ly      = r.get("dgr_long_years",  5)
+                sy      = r.get("dgr_short_years", 2)
+                payout  = r.get("payout_ratio")
+                fcf_pay = r.get("fcf_payout")
                 records.append({
-                    "티커":         r["ticker"],
-                    "등급":         r.get("grade", "—"),
-                    "점수":         f"{r['score']:+.0f}",
-                    "10Y DGR":     f"{dgr10:.0f}%" if dgr10 is not None else "N/A",
-                    "5Y DGR":      f"{dgr5:.0f}%"  if dgr5  is not None else "N/A",
-                    "연속증가":     f"{consec}년 {king}".strip(),
-                    "배당률(TTM)": f"{r.get('yield_ttm', 0):.1f}%",
-                    "Payout":      f"{payout*100:.0f}%" if payout is not None else "N/A",
-                    "배당컷":       "✂컷" if r.get("had_cut") else "—",
+                    "티커":                     r["ticker"],
+                    "등급":                     r.get("grade", "—"),
+                    "점수":                     f"{r['score']:+.0f}",
+                    f"DGR({ly}Y)":             f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
+                    f"DGR({sy}Y)":             f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
+                    "연속증가":                 f"{consec}년 {king}".strip(),
+                    "배당률(TTM)":              f"{r.get('yield_ttm', 0):.1f}%",
+                    "Payout":                  f"{payout*100:.0f}%" if payout is not None else "N/A",
+                    "FCF Payout":              f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
+                    "배당컷":                   "✂컷" if r.get("had_cut") else "—",
                 })
             evt = st.dataframe(
                 pd.DataFrame(records),

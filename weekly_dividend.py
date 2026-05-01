@@ -43,10 +43,10 @@ def _fmt_dgr(dgr, estimated: bool) -> str:
     return f"{flag}{dgr:.0f}%"
 
 
-def _accel_label(dgr5, dgr10) -> str:
-    if dgr5 is None or dgr10 is None:
+def _accel_label(dgr_short, dgr_long) -> str:
+    if dgr_short is None or dgr_long is None:
         return ""
-    diff = dgr5 - dgr10
+    diff = dgr_short - dgr_long
     if diff >= 2:
         return " (가속)"
     if diff <= -2:
@@ -72,21 +72,25 @@ def _payout_str(payout) -> str:
 
 # ── 메시지 행 생성 ──────────────────────────────────────────────────────
 def _row(rank: int, r: dict) -> str:
-    dgr10_s = _fmt_dgr(r.get("dgr10"), r.get("dgr10_estimated", False))
-    dgr5_s  = _fmt_dgr(r.get("dgr5"),  r.get("dgr5_estimated",  False))
-    accel   = _accel_label(r.get("dgr5"), r.get("dgr10"))
+    ly      = r.get("dgr_long_years",  5)
+    sy      = r.get("dgr_short_years", 2)
+    dgrl_s  = _fmt_dgr(r.get("dgr_long"),  r.get("dgr_long_estimated",  False))
+    dgrs_s  = _fmt_dgr(r.get("dgr_short"), r.get("dgr_short_estimated", False))
+    accel   = _accel_label(r.get("dgr_short"), r.get("dgr_long"))
     consec  = r.get("consecutive_growth", 0)
     king    = _king_label(consec)
     cut_s   = " ✂컷" if r.get("had_cut") else ""
     yld     = r.get("yield_ttm") or 0
     payout  = _payout_str(r.get("payout_ratio"))
+    fcf_pay = r.get("fcf_payout")
+    fcf_s   = f" / FCF Payout {fcf_pay*100:.0f}%" if fcf_pay is not None else ""
 
     line1 = (
         f"{rank}. <b>{r['ticker']}</b>  {r['score']:+.0f}  "
-        f"10Y DGR {dgr10_s} / 5Y DGR {dgr5_s}{accel} / "
+        f"DGR({ly}Y) {dgrl_s} / DGR({sy}Y) {dgrs_s}{accel} / "
         f"{consec}년 연속{king}{cut_s}\n"
     )
-    line2 = f"   Yield {yld:.1f}% / Payout {payout}\n"
+    line2 = f"   Yield {yld:.1f}% / Payout {payout}{fcf_s}\n"
     return line1 + line2
 
 
@@ -118,10 +122,10 @@ def build_report(
     total = len(results)
 
     # ── 카테고리 분류 ────────────────────────────────────────────────
-    # 1. 배당 성장 매력: DGR 10Y 기준 정렬, 배당 컷 없는 종목
+    # 1. 배당 성장 매력: DGR 장기 기준 정렬, 배당 컷 없는 종목
     growth_top = sorted(
-        [r for r in results if r.get("dgr10") is not None and not r.get("had_cut")],
-        key=lambda r: (r.get("dgr10") or 0, r["score"]),
+        [r for r in results if r.get("dgr_long") is not None and not r.get("had_cut")],
+        key=lambda r: (r.get("dgr_long") or 0, r["score"]),
         reverse=True,
     )
 
@@ -216,8 +220,8 @@ def main():
         "date":       date_str,
         "total":      len(results),
         "growth_top": [_clean(r) for r in sorted(
-            [r for r in results if r.get("dgr10") is not None and not r.get("had_cut")],
-            key=lambda r: (r.get("dgr10") or 0, r["score"]), reverse=True)[:15]],
+            [r for r in results if r.get("dgr_long") is not None and not r.get("had_cut")],
+            key=lambda r: (r.get("dgr_long") or 0, r["score"]), reverse=True)[:15]],
         "royalty":    [_clean(r) for r in sorted(
             [r for r in results if r.get("consecutive_growth", 0) >= 25],
             key=lambda r: (r.get("consecutive_growth", 0), r["score"]), reverse=True)[:10]],
