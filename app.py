@@ -70,6 +70,31 @@ def save_holdings(h: list):
         json.dump(h, f, indent=2, ensure_ascii=False)
 
 
+# ── 캐시 함수 (메모리 최적화) ─────────────────────────────────────────
+@st.cache_data(ttl=300)
+def _load_json(path_str: str, mtime: float) -> dict:
+    """파일 수정 시각이 바뀔 때만 실제로 재로드 (mtime이 캐시 키)."""
+    with open(path_str, encoding="utf-8") as f:
+        return json.load(f)
+
+def _read_cache(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    return _load_json(str(path), path.stat().st_mtime)
+
+@st.cache_data(ttl=3600)
+def _fetch_holding_scores(tickers: tuple) -> dict:
+    """보유 종목 점수 — 동일 티커 목록이면 1시간 동안 재다운로드 안 함."""
+    try:
+        from fetcher import fetch_batch, apply_quality_filter
+        from scorer import score_all
+        raw      = fetch_batch(list(tickers), period="1y", chunk_size=max(len(tickers), 1))
+        filtered = apply_quality_filter(raw)
+        return {r["ticker"]: r for r in score_all(filtered)}
+    except Exception:
+        return {}
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 앱 전역 설정
 # ══════════════════════════════════════════════════════════════════════
@@ -260,34 +285,22 @@ elif page == "📋 보유 종목":
     st.title("📋 보유 종목 관리")
     holdings = load_holdings()
 
-    # 현재 점수 조회
+    # 현재 점수 조회 (1시간 캐시)
     scores: dict = {}
     if holdings:
         with st.spinner("보유 종목 최신 점수 조회 중..."):
-            try:
-                from fetcher import fetch_batch, apply_quality_filter
-                from scorer import score_all
-                tickers = [h["ticker"] for h in holdings]
-                raw      = fetch_batch(tickers, period="1y", chunk_size=max(len(tickers), 1))
-                filtered = apply_quality_filter(raw)
-                scores   = {r["ticker"]: r for r in score_all(filtered)}
-            except Exception:
-                pass
+            scores = _fetch_holding_scores(tuple(h["ticker"] for h in holdings))
 
-    # 배당 캐시 로드
+    # 배당 캐시 로드 (파일 변경 시에만 재로드)
     div_map: dict = {}
-    if LAST_DIVIDEND.exists():
-        try:
-            with open(LAST_DIVIDEND, encoding="utf-8") as f:
-                _dc = json.load(f)
-            for _r in _dc.get("holdings_data", []):
-                div_map[_r["ticker"]] = _r
-            for _cat in ("growth_top", "royalty", "high_yield", "risk"):
-                for _r in _dc.get(_cat, []):
-                    if _r["ticker"] not in div_map:
-                        div_map[_r["ticker"]] = _r
-        except Exception:
-            pass
+    _dc = _read_cache(LAST_DIVIDEND)
+    if _dc:
+        for _r in _dc.get("holdings_data", []):
+            div_map[_r["ticker"]] = _r
+        for _cat in ("growth_top", "royalty", "high_yield", "risk"):
+            for _r in _dc.get(_cat, []):
+                if _r["ticker"] not in div_map:
+                    div_map[_r["ticker"]] = _r
 
     # 종목 목록
     if not holdings:
@@ -436,8 +449,9 @@ elif page == "🚀 분석 실행":
         c2.info("⏱ 첫 실행 ~20분  /  캐시 있을 때 ~2분  /  실행 중 페이지 이동 시 중단됩니다.")
 
         if run_btn:
+            from collections import deque
             log_box = st.empty()
-            lines: list[str] = []
+            lines: deque = deque(maxlen=40)
             env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             proc = subprocess.Popen(
                 [sys.executable, str(BASE_DIR / "main.py")],
@@ -452,19 +466,19 @@ elif page == "🚀 분석 실행":
             t0 = time.time()
             for line in proc.stdout:
                 lines.append(line)
-                log_box.code("".join(lines[-40:]), language="")
+                log_box.code("".join(lines), language="")
             proc.wait()
             elapsed = int(time.time() - t0)
             if proc.returncode == 0:
                 st.success(f"✅ 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
+                _load_json.clear()
                 st.rerun()
             else:
                 st.error("❌ 오류 발생. 위 로그를 확인해주세요.")
 
-        if LAST_RESULTS.exists():
+        last = _read_cache(LAST_RESULTS)
+        if last:
             st.markdown("---")
-            with open(LAST_RESULTS, encoding="utf-8") as f:
-                last = json.load(f)
             st.caption(
                 f"분석일: **{last.get('date', '—')}**  |  "
                 f"분석 종목: **{last.get('total', 0):,}개**  |  "
@@ -616,8 +630,9 @@ elif page == "💰 배당 분석":
     dc2.info("⏱ ~30분 소요 (전체 종목 배당 히스토리 다운로드)  /  매일 22:00 KST 자동 실행")
 
     if div_run_btn:
+        from collections import deque
         div_log_box = st.empty()
-        div_lines: list[str] = []
+        div_lines: deque = deque(maxlen=30)
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         proc = subprocess.Popen(
             [sys.executable, str(BASE_DIR / "weekly_dividend.py")],
@@ -632,22 +647,22 @@ elif page == "💰 배당 분석":
         t0 = time.time()
         for line in proc.stdout:
             div_lines.append(line)
-            div_log_box.code("".join(div_lines[-30:]), language="")
+            div_log_box.code("".join(div_lines), language="")
         proc.wait()
         elapsed = int(time.time() - t0)
         if proc.returncode == 0:
             st.success(f"✅ 배당 분석 완료! (소요 {elapsed // 60}분 {elapsed % 60}초)")
+            _load_json.clear()
             st.rerun()
         else:
             st.error("❌ 오류 발생. 위 로그를 확인해주세요.")
 
     st.markdown("---")
 
-    if not LAST_DIVIDEND.exists():
+    div_data = _read_cache(LAST_DIVIDEND)
+    if not div_data:
         st.info("아직 배당 분석 기록이 없습니다. 위 버튼을 눌러 첫 분석을 실행해보세요.")
     else:
-        with open(LAST_DIVIDEND, encoding="utf-8") as f:
-            div_data = json.load(f)
 
         st.caption(
             f"분석일: **{div_data.get('date', '—')}**  |  "
