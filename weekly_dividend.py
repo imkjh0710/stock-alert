@@ -85,12 +85,15 @@ def _row(rank: int, r: dict) -> str:
     fcf_pay = r.get("fcf_payout")
     fcf_s   = f" / FCF Payout {fcf_pay*100:.0f}%" if fcf_pay is not None else ""
 
+    pg    = r.get("price_growth_cagr")
+    pg_s  = f" / 주가성장률 {pg:+.1f}%" if pg is not None else ""
+
     line1 = (
         f"{rank}. <b>{r['ticker']}</b>  {r['score']:+.0f}  "
-        f"DGR({ly}Y) {dgrl_s} / DGR({sy}Y) {dgrs_s}{accel} / "
+        f"배당성장률({ly}년) {dgrl_s} / ({sy}년) {dgrs_s}{accel} / "
         f"{consec}년 연속{king}{cut_s}\n"
     )
-    line2 = f"   Yield {yld:.1f}% / Payout {payout}{fcf_s}\n"
+    line2 = f"   배당률 {yld:.1f}% / 배당성향 {payout}{fcf_s}{pg_s}\n"
     return line1 + line2
 
 

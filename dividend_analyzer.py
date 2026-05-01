@@ -17,10 +17,12 @@ import yfinance as yf
 
 # ── 설정 로드 ─────────────────────────────────────────────────────────────
 _DIV_DEFAULTS = {
-    "div_years":     5,   # DGR 장기 계산 기간 (년)
-    "div_min_yield": 1,   # 최소 배당률 (%)
-    "div_max_payout": 85, # 최대 Payout 비율 (%)
-    "div_min_consec": 3,  # 최소 연속 배당 증가 연수
+    "div_years":              5,   # 배당성장률 계산 기간 (년)
+    "div_min_dgr":            0,   # 최소 배당성장률 (%)
+    "div_min_yield":          1,   # 최소 배당률 (%)
+    "div_max_payout":        85,   # 최대 배당성향 (%)
+    "div_min_consec":         3,   # 최소 연속 배당 증가 연수
+    "div_min_price_growth": -50,   # 최소 주가성장률 (%, -50 = 사실상 미적용)
 }
 
 def _load_div_settings() -> dict:
@@ -266,15 +268,18 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
     배당 지급 종목 필터링 → 메트릭 계산 → 점수화 → 설정 기반 필터 적용.
     반환: 점수 내림차순 리스트
     """
-    cfg         = _load_div_settings()
-    div_years   = max(2, int(cfg["div_years"]))
-    short_years = max(1, div_years // 2)
-    min_yield   = float(cfg["div_min_yield"])
-    max_payout  = float(cfg["div_max_payout"]) / 100.0
-    min_consec  = int(cfg["div_min_consec"])
+    cfg              = _load_div_settings()
+    div_years        = max(2, int(cfg["div_years"]))
+    short_years      = max(1, div_years // 2)
+    min_dgr          = float(cfg["div_min_dgr"])
+    min_yield        = float(cfg["div_min_yield"])
+    max_payout       = float(cfg["div_max_payout"]) / 100.0
+    min_consec       = int(cfg["div_min_consec"])
+    min_price_growth = float(cfg["div_min_price_growth"])
 
-    print(f"  설정: DGR {div_years}Y/{short_years}Y  최소배당률 {min_yield}%  "
-          f"최대Payout {cfg['div_max_payout']}%  최소연속 {min_consec}년")
+    print(f"  설정: 배당성장률 {div_years}년/{short_years}년  최소성장률 {min_dgr}%  "
+          f"최소배당률 {min_yield}%  최대배당성향 {cfg['div_max_payout']}%  "
+          f"최소연속 {min_consec}년  최소주가성장률 {min_price_growth}%")
 
     print(f"▶ 배당 히스토리 다운로드 ({len(all_tickers)}개 종목)...")
     hist = fetch_dividend_history(all_tickers)
@@ -313,6 +318,22 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
                 total_div  = ttm * shares
                 fcf_payout = round(total_div / fcf, 3)
 
+            # 주가성장률 CAGR (설정 기간)
+            price_growth_cagr = None
+            if curr_price and len(close) > 1:
+                try:
+                    now_ts = pd.Timestamp.now(tz=close.index.tz) if close.index.tz else pd.Timestamp.now()
+                    target_ts = now_ts - pd.DateOffset(years=div_years)
+                    past = close[close.index <= target_ts]
+                    if len(past) > 0:
+                        past_px = float(past.iloc[-1])
+                        if past_px > 0:
+                            price_growth_cagr = round(
+                                ((curr_price / past_px) ** (1 / div_years) - 1) * 100, 1
+                            )
+                except Exception:
+                    pass
+
             metrics = {
                 "dgr_long":            dgr_l,
                 "dgr_long_estimated":  est_l,
@@ -325,6 +346,7 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
                 "yield_ttm":           round(yld_ttm, 2),
                 "payout_ratio":        payout,
                 "fcf_payout":          fcf_payout,
+                "price_growth_cagr":   price_growth_cagr,
                 "five_yr_avg_yield":   avg5,
                 "ttm_div":             round(ttm, 4),
                 "current_price":       round(curr_price, 2) if curr_price else None,
@@ -344,6 +366,9 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
         if (r.get("yield_ttm") or 0) >= min_yield
         and (min_consec == 0 or r.get("consecutive_growth", 0) >= min_consec)
         and (r.get("payout_ratio") is None or r.get("payout_ratio") <= max_payout)
+        and (r.get("dgr_long") is None or (r.get("dgr_long") or -999) >= min_dgr)
+        and (min_price_growth <= -50 or r.get("price_growth_cagr") is None
+             or (r.get("price_growth_cagr") or -999) >= min_price_growth)
     ]
     print(f"  필터 후: {len(results)}개 ({before - len(results)}개 제외)\n")
 

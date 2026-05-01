@@ -40,10 +40,12 @@ DEFAULT_SETTINGS = {
     "volume_t3":              5,
     "vp_window":             90,
     # ── 배당 분석 설정 ─────────────────────────────────────────
-    "div_years":              5,   # DGR 장기 계산 기간 (년)
+    "div_years":              5,   # 배당성장률 계산 기간 (년)
+    "div_min_dgr":            0,   # 최소 배당성장률 (%)
     "div_min_yield":          1,   # 최소 배당률 (%)
     "div_max_payout":        85,   # 최대 Payout 비율 (%)
     "div_min_consec":         3,   # 최소 연속 배당 증가 연수
+    "div_min_price_growth": -50,   # 최소 주가성장률 (%, -50 = 사실상 미적용)
 }
 
 # ── 유틸 함수 ─────────────────────────────────────────────────────────
@@ -229,10 +231,12 @@ if page == "⚙️ 지표 설정":
     row("분석 윈도우 (영업일)",  "vp_window",  20, 252)
 
     st.markdown("#### 배당 분석")
-    row("DGR 장기 기간 (년)  →  성장률 계산 기준",   "div_years",     1, 20)
-    row("최소 배당률 (%)  →  미만 종목 제외",         "div_min_yield",  0, 10)
-    row("최대 Payout 비율 (%)  →  초과 종목 제외",   "div_max_payout", 50, 200)
-    row("최소 연속 증가 연수  →  미만 종목 제외",      "div_min_consec", 0, 50)
+    row("배당성장률 계산 기간 (년)  →  장기/단기 CAGR 기준",        "div_years",            1,   20)
+    row("최소 배당성장률 (%)  →  미만 종목 제외",                    "div_min_dgr",        -50,   50)
+    row("최소 배당률 (%)  →  미만 종목 제외",                        "div_min_yield",         0,   10)
+    row("최대 배당성향 (%)  →  초과 종목 제외 (이익 대비 배당 비율)", "div_max_payout",       50,  200)
+    row("최소 연속 배당 증가 (년)  →  미만 종목 제외",               "div_min_consec",        0,   50)
+    row("최소 주가성장률 (%)  →  미만 종목 제외 (-50 = 사실상 미적용)", "div_min_price_growth", -50, 50)
 
     st.markdown("---")
     c_save, c_reset, _ = st.columns([2, 2, 6])
@@ -344,17 +348,19 @@ elif page == "📋 보유 종목":
                 sy      = dr.get("dgr_short_years", 2)
                 payout  = dr.get("payout_ratio")
                 fcf_pay = dr.get("fcf_payout")
+                pg      = dr.get("price_growth_cagr")
                 div_records.append({
-                    "티커":            t,
-                    "배당등급":        dr.get("grade", "—"),
-                    "배당점수":        f"{dr['score']:+.0f}",
-                    "배당률(TTM)":     f"{dr.get('yield_ttm', 0):.1f}%",
-                    f"DGR({ly}Y)":    f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
-                    f"DGR({sy}Y)":    f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
-                    "연속증가":        f"{consec}년 {king}".strip(),
-                    "Payout":         f"{payout*100:.0f}%" if payout is not None else "N/A",
-                    "FCF Payout":     f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
-                    "배당컷":          "✂컷" if dr.get("had_cut") else "—",
+                    "티커":                           t,
+                    "배당등급":                       dr.get("grade", "—"),
+                    "배당점수":                       f"{dr['score']:+.0f}",
+                    "배당률(최근1년)":                f"{dr.get('yield_ttm', 0):.1f}%",
+                    f"배당성장률({ly}년·연평균)":     f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
+                    f"배당성장률({sy}년·연평균)":     f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
+                    "연속 배당 증가":                  f"{consec}년 {king}".strip(),
+                    "배당성향(이익 대비)":             f"{payout*100:.0f}%" if payout is not None else "N/A",
+                    "잉여현금흐름 대비 배당":           f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
+                    f"주가성장률({ly}년·연평균)":      f"{pg:+.1f}%" if pg is not None else "N/A",
+                    "배당컷":                          "✂컷" if dr.get("had_cut") else "—",
                 })
             if div_records:
                 st.caption("행을 클릭하면 해당 종목 봉차트가 열립니다.")
@@ -654,30 +660,32 @@ elif page == "💰 배당 분석":
             if not rows:
                 st.info("해당 항목 없음")
                 return
+            ly = rows[0].get("dgr_long_years",  5) if rows else 5
+            sy = rows[0].get("dgr_short_years", 2) if rows else 2
             records = []
             for r in rows:
-                consec = r.get("consecutive_growth", 0)
+                consec  = r.get("consecutive_growth", 0)
                 if   consec >= 50: king = "👑킹"
                 elif consec >= 25: king = "🏆귀족"
                 elif consec >= 10: king = "⭐챔피언"
                 else:              king = ""
-                dgr_l   = r.get("dgr_long")
-                dgr_s   = r.get("dgr_short")
-                ly      = r.get("dgr_long_years",  5)
-                sy      = r.get("dgr_short_years", 2)
-                payout  = r.get("payout_ratio")
-                fcf_pay = r.get("fcf_payout")
+                dgr_l    = r.get("dgr_long")
+                dgr_s    = r.get("dgr_short")
+                payout   = r.get("payout_ratio")
+                fcf_pay  = r.get("fcf_payout")
+                pg       = r.get("price_growth_cagr")
                 records.append({
-                    "티커":                     r["ticker"],
-                    "등급":                     r.get("grade", "—"),
-                    "점수":                     f"{r['score']:+.0f}",
-                    f"DGR({ly}Y)":             f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
-                    f"DGR({sy}Y)":             f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
-                    "연속증가":                 f"{consec}년 {king}".strip(),
-                    "배당률(TTM)":              f"{r.get('yield_ttm', 0):.1f}%",
-                    "Payout":                  f"{payout*100:.0f}%" if payout is not None else "N/A",
-                    "FCF Payout":              f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
-                    "배당컷":                   "✂컷" if r.get("had_cut") else "—",
+                    "티커":                            r["ticker"],
+                    "등급":                            r.get("grade", "—"),
+                    "점수":                            f"{r['score']:+.0f}",
+                    f"배당성장률({ly}년·연평균)":      f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
+                    f"배당성장률({sy}년·연평균)":      f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
+                    "연속 배당 증가":                   f"{consec}년 {king}".strip(),
+                    "배당률(최근1년)":                  f"{r.get('yield_ttm', 0):.1f}%",
+                    "배당성향(이익 대비)":              f"{payout*100:.0f}%" if payout is not None else "N/A",
+                    "잉여현금흐름 대비 배당":            f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
+                    f"주가성장률({ly}년·연평균)":       f"{pg:+.1f}%" if pg is not None else "N/A",
+                    "배당컷":                           "✂컷" if r.get("had_cut") else "—",
                 })
             evt = st.dataframe(
                 pd.DataFrame(records),
