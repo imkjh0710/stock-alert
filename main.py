@@ -13,7 +13,6 @@ from config import CACHE_DIR, ETF_TICKERS
 from universe import get_universe, get_etf_tickers
 from fetcher import fetch_batch, apply_quality_filter
 from scorer import score_all
-from notifier import build_messages, send_message
 
 
 def main():
@@ -89,15 +88,6 @@ def main():
     with open(os.path.join(daily_dir, f"{date_str}.json"), "w", encoding="utf-8") as f:
         json.dump(cache_payload, f, ensure_ascii=False)
     print(f"  일별 캐시 저장: cache/daily/{date_str}.json\n")
-
-    # ── 6. 텔레그램 전송 ──────────────────────────────────────────────
-    print("▶ 텔레그램 메시지 전송 중...")
-    messages = build_messages(date_str, total_scored, sp500_results, outer_results, etf_results)
-
-    for i, msg in enumerate(messages, 1):
-        ok = send_message(msg)
-        status = "✅ 성공" if ok else "❌ 실패"
-        print(f"  메시지 {i}/{len(messages)}: {status}")
 
     elapsed = int((datetime.now() - t0).total_seconds() // 60)
     print(f"\n{'='*50}")
