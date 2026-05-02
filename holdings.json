@@ -14,5 +14,9 @@
   {
     "ticker": "HESM",
     "name": "HESM"
+  },
+  {
+    "ticker": "IONQ",
+    "name": "IONQ"
   }
 ]
