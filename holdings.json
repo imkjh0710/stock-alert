@@ -18,5 +18,9 @@
   {
     "ticker": "IONQ",
     "name": "IONQ"
+  },
+  {
+    "ticker": "OMF",
+    "name": "OMF"
   }
 ]
