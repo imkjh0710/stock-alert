@@ -26,5 +26,9 @@
   {
     "ticker": "JEPQ",
     "name": "JEPQ"
+  },
+  {
+    "ticker": "PLTR",
+    "name": "PLTR"
   }
 ]
