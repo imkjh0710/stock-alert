@@ -2,5 +2,9 @@
   {
     "ticker": "HESM",
     "name": "HESM"
+  },
+  {
+    "ticker": "AM",
+    "name": "AM"
   }
 ]
