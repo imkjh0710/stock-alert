@@ -30,5 +30,9 @@
   {
     "ticker": "SCHD",
     "name": "SCHD"
+  },
+  {
+    "ticker": "SMCI",
+    "name": "Super Micro Computer, Inc."
   }
 ]
