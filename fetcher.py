@@ -2,6 +2,7 @@
 yfinance 배치 다운로드 + 품질 필터
 """
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 import yfinance as yf
@@ -89,3 +90,26 @@ def apply_quality_filter(
         except Exception:
             pass
     return qualified
+
+
+def fetch_fundamentals(tickers: list[str], max_workers: int = 8) -> dict[str, dict]:
+    """PER(trailingPE), PBR(priceToBook) 병렬 조회."""
+    def _one(t: str) -> tuple[str, dict]:
+        try:
+            info = yf.Ticker(t).info
+            per  = info.get("trailingPE")
+            pbr  = info.get("priceToBook")
+            return t, {
+                "per": round(float(per), 1) if per and float(per) > 0 else None,
+                "pbr": round(float(pbr), 2) if pbr and float(pbr) > 0 else None,
+            }
+        except Exception:
+            return t, {"per": None, "pbr": None}
+
+    results: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = {ex.submit(_one, t): t for t in tickers}
+        for fut in as_completed(futs):
+            t, data = fut.result()
+            results[t] = data
+    return results

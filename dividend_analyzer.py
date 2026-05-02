@@ -174,11 +174,15 @@ def ttm_div(div_series: pd.Series) -> float:
 def _fetch_one_info(ticker: str) -> tuple[str, dict]:
     try:
         info = yf.Ticker(ticker).info
+        per  = info.get("trailingPE")
+        pbr  = info.get("priceToBook")
         return ticker, {
             "payoutRatio":              info.get("payoutRatio"),
             "fiveYearAvgDividendYield": info.get("fiveYearAvgDividendYield"),
             "freeCashflow":             info.get("freeCashflow"),
             "sharesOutstanding":        info.get("sharesOutstanding"),
+            "trailingPE":               per,
+            "priceToBook":              pbr,
         }
     except Exception:
         return ticker, {}
@@ -288,8 +292,10 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
 
     print("▶ 배당 메트릭 계산 중...")
     results: list[dict] = []
+    hist_items = list(hist.items())
+    del hist
 
-    for ticker, data in hist.items():
+    for ticker, data in hist_items:
         try:
             divs   = data["dividends"]
             close  = data["close"]
@@ -331,6 +337,10 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
                 except Exception:
                     pass
 
+            # PER / PBR
+            _per = info.get("trailingPE")
+            _pbr = info.get("priceToBook")
+
             metrics = {
                 "dgr_long":            dgr_l,
                 "dgr_long_estimated":  est_l,
@@ -347,6 +357,8 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
                 "five_yr_avg_yield":   avg5,
                 "ttm_div":             round(ttm, 4),
                 "current_price":       round(curr_price, 2) if curr_price else None,
+                "per":                 round(float(_per), 1) if _per and float(_per) > 0 else None,
+                "pbr":                 round(float(_pbr), 2) if _pbr and float(_pbr) > 0 else None,
             }
 
             score, grade = score_dividend(metrics)

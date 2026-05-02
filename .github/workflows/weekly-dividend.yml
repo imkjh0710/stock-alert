@@ -1,8 +1,6 @@
-name: Daily Dividend Analysis
+name: Dividend Analysis (manual)
 
 on:
-  schedule:
-    - cron: '0 13 * * 1-5'   # 평일 매일 13:00 UTC = 22:00 KST
   workflow_dispatch:
 
 permissions:
@@ -11,7 +9,7 @@ permissions:
 jobs:
   dividend-report:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4

@@ -293,8 +293,10 @@ elif page == "📋 보유 종목":
                 if dr is None:
                     div_records.append({
                         "티커": t, "배당등급": "—", "배당점수": "—",
-                        "배당률(TTM)": "—", "10Y DGR": "—", "5Y DGR": "—",
-                        "연속증가": "—", "Payout": "—", "배당컷": "—",
+                        "배당률(최근1년)": "—", "배당성장률(5년·연평균)": "—",
+                        "배당성장률(2년·연평균)": "—", "연속 배당 증가": "—",
+                        "FCF 배당성향": "—", "주가성장률(5년·연평균)": "—",
+                        "배당컷": "—", "PER": "—", "PBR": "—",
                     })
                     continue
                 consec = dr.get("consecutive_growth", 0)
@@ -320,6 +322,8 @@ elif page == "📋 보유 종목":
                     "FCF 배당성향":                   f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
                     f"주가성장률({ly}년·연평균)":      f"{pg:+.1f}%" if pg is not None else "N/A",
                     "배당컷":                          "✂컷" if dr.get("had_cut") else "—",
+                    "PER":                            f"{dr['per']:.1f}" if dr.get("per") else "N/A",
+                    "PBR":                            f"{dr['pbr']:.2f}" if dr.get("pbr") else "N/A",
                 })
             if div_records:
                 st.dataframe(
@@ -453,6 +457,8 @@ elif page == "🚀 분석 실행":
                                 "종가($)": r["close"],
                                 "등락(%)": f"{r['change_pct']:+.1f}%",
                                 "1주범위": week,
+                                "PER":     f"{r['per']:.1f}" if r.get("per") else "N/A",
+                                "PBR":     f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
                             })
                         st.dataframe(
                             pd.DataFrame(records),
@@ -625,6 +631,8 @@ elif page == "💰 배당 분석":
                     "FCF 배당성향":                    f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
                     f"주가성장률({ly}년·연평균)":       f"{pg:+.1f}%" if pg is not None else "N/A",
                     "배당컷":                           "✂컷" if r.get("had_cut") else "—",
+                    "PER":                             f"{r['per']:.1f}" if r.get("per") else "N/A",
+                    "PBR":                             f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
                 })
             st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
 

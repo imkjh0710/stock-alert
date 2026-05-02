@@ -1,8 +1,9 @@
-name: Daily Stock Analysis
+name: Daily Analysis (Stock + Dividend)
 
 on:
   schedule:
-    - cron: '30 21 * * *'   # 매일 UTC 21:30 = 한국시간 오전 6:30
+    - cron: '30 21 * * *'   # 매일 UTC 21:30 = KST 오전 6:30
+    - cron: '0 14 * * *'    # 매일 UTC 14:00 = KST 오후 11:00
   workflow_dispatch:
 
 permissions:
@@ -11,7 +12,7 @@ permissions:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
@@ -24,11 +25,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run analysis
+      - name: Run stock analysis
         run: python main.py
 
       - name: Cleanup old daily cache (keep 14 days)
         run: find cache/daily -name "*.json" -mtime +14 -delete 2>/dev/null || true
+
+      - name: Run dividend analysis
+        run: python weekly_dividend.py
 
       - name: Commit updated cache
         run: |
