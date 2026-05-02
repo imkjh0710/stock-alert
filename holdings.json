@@ -1,7 +1,7 @@
 [
   {
-    "ticker": "HESM",
-    "name": "HESM"
+    "ticker": "JEPQ",
+    "name": "JEPQ"
   },
   {
     "ticker": "AM",
@@ -12,6 +12,10 @@
     "name": "ATO"
   },
   {
+    "ticker": "HESM",
+    "name": "HESM"
+  },
+  {
     "ticker": "IONQ",
     "name": "IONQ"
   },
@@ -20,23 +24,7 @@
     "name": "OMF"
   },
   {
-    "ticker": "RDDT",
-    "name": "RDDT"
-  },
-  {
-    "ticker": "JEPQ",
-    "name": "JEPQ"
-  },
-  {
-    "ticker": "PLTR",
-    "name": "PLTR"
-  },
-  {
-    "ticker": "RXRX",
-    "name": "RXRX"
-  },
-  {
-    "ticker": "SMCI",
-    "name": "SMCI"
+    "ticker": "TSLL",
+    "name": "TSLL"
   }
 ]
