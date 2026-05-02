@@ -38,5 +38,9 @@
   {
     "ticker": "RXRX",
     "name": "RXRX"
+  },
+  {
+    "ticker": "PLTR",
+    "name": "PLTR"
   }
 ]
