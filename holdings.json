@@ -1,7 +1,7 @@
 [
   {
-    "ticker": "JEPQ",
-    "name": "JEPQ"
+    "ticker": "HESM",
+    "name": "HESM"
   },
   {
     "ticker": "AM",
@@ -12,10 +12,6 @@
     "name": "ATO"
   },
   {
-    "ticker": "HESM",
-    "name": "HESM"
-  },
-  {
     "ticker": "IONQ",
     "name": "IONQ"
   },
@@ -24,23 +20,27 @@
     "name": "OMF"
   },
   {
-    "ticker": "TSLL",
-    "name": "TSLL"
+    "ticker": "RDDT",
+    "name": "RDDT"
   },
   {
-    "ticker": "SCHD",
-    "name": "SCHD"
+    "ticker": "JEPQ",
+    "name": "JEPQ"
   },
   {
-    "ticker": "SMCI",
-    "name": "Super Micro Computer, Inc."
+    "ticker": "PLTR",
+    "name": "PLTR"
   },
   {
     "ticker": "RXRX",
     "name": "RXRX"
   },
   {
-    "ticker": "PLTR",
-    "name": "PLTR"
+    "ticker": "SMCI",
+    "name": "SMCI"
+  },
+  {
+    "ticker": "SCHD",
+    "name": "SCHD"
   }
 ]
