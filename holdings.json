@@ -2,5 +2,9 @@
   {
     "ticker": "JEPQ",
     "name": "JEPQ"
+  },
+  {
+    "ticker": "AM",
+    "name": "AM"
   }
 ]
