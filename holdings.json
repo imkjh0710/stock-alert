@@ -22,5 +22,9 @@
   {
     "ticker": "RDDT",
     "name": "RDDT"
+  },
+  {
+    "ticker": "JEPQ",
+    "name": "JEPQ"
   }
 ]
