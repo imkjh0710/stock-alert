@@ -1,29 +1,5 @@
 [
   {
-    "ticker": "HESM",
-    "name": "HESM"
-  },
-  {
-    "ticker": "AM",
-    "name": "AM"
-  },
-  {
-    "ticker": "ATO",
-    "name": "ATO"
-  },
-  {
-    "ticker": "IONQ",
-    "name": "IONQ"
-  },
-  {
-    "ticker": "OMF",
-    "name": "OMF"
-  },
-  {
-    "ticker": "RDDT",
-    "name": "RDDT"
-  },
-  {
     "ticker": "JEPQ",
     "name": "JEPQ"
   }
