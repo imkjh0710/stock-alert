@@ -10,5 +10,9 @@
   {
     "ticker": "ATO",
     "name": "ATO"
+  },
+  {
+    "ticker": "HESM",
+    "name": "HESM"
   }
 ]
