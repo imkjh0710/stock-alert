@@ -42,5 +42,9 @@
   {
     "ticker": "SCHD",
     "name": "SCHD"
+  },
+  {
+    "ticker": "TSLL",
+    "name": "TSLL"
   }
 ]
