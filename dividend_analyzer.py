@@ -322,21 +322,19 @@ def analyze_dividends(all_tickers: list[str], apply_filter: bool = True) -> list
                 total_div  = ttm * shares
                 fcf_payout = round(total_div / fcf, 3)
 
-            # 주가성장률 CAGR (설정 기간)
-            price_growth_cagr = None
+            # 1~5년 전 대비 현재 주가 수익률
+            price_growths: dict[int, float | None] = {}
             if curr_price and len(close) > 1:
-                try:
-                    now_ts = pd.Timestamp.now(tz=close.index.tz) if close.index.tz else pd.Timestamp.now()
-                    target_ts = now_ts - pd.DateOffset(years=div_years)
-                    past = close[close.index <= target_ts]
-                    if len(past) > 0:
-                        past_px = float(past.iloc[-1])
-                        if past_px > 0:
-                            price_growth_cagr = round(
-                                ((curr_price / past_px) ** (1 / div_years) - 1) * 100, 1
-                            )
-                except Exception:
-                    pass
+                now_ts = pd.Timestamp.now(tz=close.index.tz) if close.index.tz else pd.Timestamp.now()
+                for yr in range(1, 6):
+                    try:
+                        past = close[close.index <= now_ts - pd.DateOffset(years=yr)]
+                        if len(past) > 0:
+                            past_px = float(past.iloc[-1])
+                            if past_px > 0:
+                                price_growths[yr] = round((curr_price / past_px - 1) * 100, 1)
+                    except Exception:
+                        pass
 
             # PER / PBR
             _per = info.get("trailingPE")
@@ -354,7 +352,11 @@ def analyze_dividends(all_tickers: list[str], apply_filter: bool = True) -> list
                 "yield_ttm":           round(yld_ttm, 2),
                 "payout_ratio":        payout,
                 "fcf_payout":          fcf_payout,
-                "price_growth_cagr":   price_growth_cagr,
+                "price_growth_1y":     price_growths.get(1),
+                "price_growth_2y":     price_growths.get(2),
+                "price_growth_3y":     price_growths.get(3),
+                "price_growth_4y":     price_growths.get(4),
+                "price_growth_5y":     price_growths.get(5),
                 "five_yr_avg_yield":   avg5,
                 "ttm_div":             round(ttm, 4),
                 "current_price":       round(curr_price, 2) if curr_price else None,
@@ -378,8 +380,10 @@ def analyze_dividends(all_tickers: list[str], apply_filter: bool = True) -> list
             and (min_consec == 0 or r.get("consecutive_growth", 0) >= min_consec)
             and (r.get("fcf_payout") is None or r.get("fcf_payout") <= max_payout)
             and (r.get("dgr_long") is None or (r.get("dgr_long") or -999) >= min_dgr)
-            and (min_price_growth <= -50 or r.get("price_growth_cagr") is None
-                 or (r.get("price_growth_cagr") or -999) >= min_price_growth)
+            and (min_price_growth <= -50
+                 or all(r.get(f"price_growth_{y}y") is None for y in range(1, 6))
+                 or any((r.get(f"price_growth_{y}y") or -999) >= min_price_growth
+                        for y in range(1, 6)))
         ]
         print(f"  필터 후: {len(results)}개 ({before - len(results)}개 제외)\n")
 

@@ -327,7 +327,9 @@ elif page == "📋 보유 종목":
                         "티커": t, "배당등급": "—", "배당점수": "—",
                         "배당률(최근1년)": "—", "배당성장률(5년·연평균)": "—",
                         "배당성장률(2년·연평균)": "—", "연속 배당 증가": "—",
-                        "FCF 배당성향": "—", "주가성장률(5년·연평균)": "—",
+                        "FCF 배당성향": "—",
+                        "주가수익(1Y)": "—", "주가수익(2Y)": "—", "주가수익(3Y)": "—",
+                        "주가수익(4Y)": "—", "주가수익(5Y)": "—",
                         "배당컷": "—", "PER": "—", "PBR": "—",
                     })
                     continue
@@ -340,9 +342,7 @@ elif page == "📋 보유 종목":
                 dgr_s   = dr.get("dgr_short")
                 ly      = dr.get("dgr_long_years",  5)
                 sy      = dr.get("dgr_short_years", 2)
-                payout  = dr.get("payout_ratio")
                 fcf_pay = dr.get("fcf_payout")
-                pg      = dr.get("price_growth_cagr")
                 div_records.append({
                     "티커":                           t,
                     "배당등급":                       dr.get("grade", "—"),
@@ -352,7 +352,11 @@ elif page == "📋 보유 종목":
                     f"배당성장률({sy}년·연평균)":     f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
                     "연속 배당 증가":                  f"{consec}년 {king}".strip(),
                     "FCF 배당성향":                   f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
-                    f"주가성장률({ly}년·연평균)":      f"{pg:+.1f}%" if pg is not None else "N/A",
+                    "주가수익(1Y)": f"{dr['price_growth_1y']:+.1f}%" if dr.get("price_growth_1y") is not None else "N/A",
+                    "주가수익(2Y)": f"{dr['price_growth_2y']:+.1f}%" if dr.get("price_growth_2y") is not None else "N/A",
+                    "주가수익(3Y)": f"{dr['price_growth_3y']:+.1f}%" if dr.get("price_growth_3y") is not None else "N/A",
+                    "주가수익(4Y)": f"{dr['price_growth_4y']:+.1f}%" if dr.get("price_growth_4y") is not None else "N/A",
+                    "주가수익(5Y)": f"{dr['price_growth_5y']:+.1f}%" if dr.get("price_growth_5y") is not None else "N/A",
                     "배당컷":                          "✂컷" if dr.get("had_cut") else "—",
                     "PER":                            f"{dr['per']:.1f}" if dr.get("per") else "N/A",
                     "PBR":                            f"{dr['pbr']:.2f}" if dr.get("pbr") else "N/A",
@@ -648,11 +652,9 @@ elif page == "💰 배당 분석":
                 elif consec >= 25: king = "🏆귀족"
                 elif consec >= 10: king = "⭐챔피언"
                 else:              king = ""
-                dgr_l    = r.get("dgr_long")
-                dgr_s    = r.get("dgr_short")
-                payout   = r.get("payout_ratio")
-                fcf_pay  = r.get("fcf_payout")
-                pg       = r.get("price_growth_cagr")
+                dgr_l   = r.get("dgr_long")
+                dgr_s   = r.get("dgr_short")
+                fcf_pay = r.get("fcf_payout")
                 records.append({
                     "티커":                            r["ticker"],
                     "등급":                            r.get("grade", "—"),
@@ -662,7 +664,11 @@ elif page == "💰 배당 분석":
                     "연속 배당 증가":                   f"{consec}년 {king}".strip(),
                     "배당률(최근1년)":                  f"{r.get('yield_ttm', 0):.1f}%",
                     "FCF 배당성향":                    f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
-                    f"주가성장률({ly}년·연평균)":       f"{pg:+.1f}%" if pg is not None else "N/A",
+                    "주가수익(1Y)":  f"{r['price_growth_1y']:+.1f}%" if r.get("price_growth_1y") is not None else "N/A",
+                    "주가수익(2Y)":  f"{r['price_growth_2y']:+.1f}%" if r.get("price_growth_2y") is not None else "N/A",
+                    "주가수익(3Y)":  f"{r['price_growth_3y']:+.1f}%" if r.get("price_growth_3y") is not None else "N/A",
+                    "주가수익(4Y)":  f"{r['price_growth_4y']:+.1f}%" if r.get("price_growth_4y") is not None else "N/A",
+                    "주가수익(5Y)":  f"{r['price_growth_5y']:+.1f}%" if r.get("price_growth_5y") is not None else "N/A",
                     "배당컷":                           "✂컷" if r.get("had_cut") else "—",
                     "PER":                             f"{r['per']:.1f}" if r.get("per") else "N/A",
                     "PBR":                             f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
