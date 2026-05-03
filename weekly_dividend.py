@@ -1,6 +1,6 @@
 """
 배당주 일일 분석 — 캐시 저장 전용
-매일 평일 22:00 KST 실행
+매일 오전 6:30 / 오후 11:00 (KST) 실행
 
 실행 방법:
     venv/Scripts/python weekly_dividend.py
@@ -44,9 +44,18 @@ def main():
     results  = analyze_dividends(all_tickers)
     date_str = t0.strftime("%Y-%m-%d")
 
-    # ── 카테고리 분류 ─────────────────────────────────────────────────
-    held_set = set(holdings)
+    # ── 보유 종목: 필터 탈락·미포함 종목 별도 분석 (필터 없이) ──────
+    held_set   = set(holdings)
+    result_map = {r["ticker"]: r for r in results}
+    missing    = [t for t in holdings if t not in result_map]
+    if missing:
+        print(f"▶ 보유 종목 {len(missing)}개 필터 없이 별도 분석 중...")
+        extra = analyze_dividends(missing, apply_filter=False)
+        for r in extra:
+            result_map[r["ticker"]] = r
+        print(f"  완료\n")
 
+    # ── 카테고리 분류 ─────────────────────────────────────────────────
     growth_top = sorted(
         [r for r in results if r.get("dgr_long") is not None and not r.get("had_cut")],
         key=lambda r: (r.get("dgr_long") or 0, r["score"]), reverse=True,
@@ -80,7 +89,7 @@ def main():
         "royalty":       [_clean(r) for r in royalty[:10]],
         "high_yield":    [_clean(r) for r in high_yield[:10]],
         "risk":          [_clean(r) for r in risk[:5]],
-        "holdings_data": [_clean(r) for r in results if r["ticker"] in held_set],
+        "holdings_data": [_clean(result_map[t]) for t in holdings if t in result_map],
     }
     with open(os.path.join(CACHE_DIR, "last_dividend.json"), "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False)

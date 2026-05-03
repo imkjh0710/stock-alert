@@ -264,9 +264,10 @@ def score_dividend(metrics: dict) -> tuple[float, str]:
 
 
 # ── 전체 분석 파이프라인 ────────────────────────────────────────────────
-def analyze_dividends(all_tickers: list[str]) -> list[dict]:
+def analyze_dividends(all_tickers: list[str], apply_filter: bool = True) -> list[dict]:
     """
     배당 지급 종목 필터링 → 메트릭 계산 → 점수화 → 설정 기반 필터 적용.
+    apply_filter=False 이면 필터 없이 배당 지급 종목 전체 반환 (보유 종목용).
     반환: 점수 내림차순 리스트
     """
     cfg              = _load_div_settings()
@@ -368,17 +369,18 @@ def analyze_dividends(all_tickers: list[str]) -> list[dict]:
 
     print(f"  완료: {len(results)}개 분석됨")
 
-    # ── 설정 기반 필터 ──────────────────────────────────────────────────
-    before = len(results)
-    results = [
-        r for r in results
-        if (r.get("yield_ttm") or 0) >= min_yield
-        and (min_consec == 0 or r.get("consecutive_growth", 0) >= min_consec)
-        and (r.get("fcf_payout") is None or r.get("fcf_payout") <= max_payout)
-        and (r.get("dgr_long") is None or (r.get("dgr_long") or -999) >= min_dgr)
-        and (min_price_growth <= -50 or r.get("price_growth_cagr") is None
-             or (r.get("price_growth_cagr") or -999) >= min_price_growth)
-    ]
-    print(f"  필터 후: {len(results)}개 ({before - len(results)}개 제외)\n")
+    # ── 설정 기반 필터 (apply_filter=True 일 때만 적용) ─────────────────
+    if apply_filter:
+        before = len(results)
+        results = [
+            r for r in results
+            if (r.get("yield_ttm") or 0) >= min_yield
+            and (min_consec == 0 or r.get("consecutive_growth", 0) >= min_consec)
+            and (r.get("fcf_payout") is None or r.get("fcf_payout") <= max_payout)
+            and (r.get("dgr_long") is None or (r.get("dgr_long") or -999) >= min_dgr)
+            and (min_price_growth <= -50 or r.get("price_growth_cagr") is None
+                 or (r.get("price_growth_cagr") or -999) >= min_price_growth)
+        ]
+        print(f"  필터 후: {len(results)}개 ({before - len(results)}개 제외)\n")
 
     return sorted(results, key=lambda x: x["score"], reverse=True)
