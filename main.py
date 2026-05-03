@@ -13,7 +13,7 @@ from datetime import datetime
 from config import CACHE_DIR, ETF_TICKERS
 from universe import get_universe, get_etf_tickers
 from fetcher import fetch_batch, apply_quality_filter, fetch_fundamentals
-from scorer import score_all
+from scorer import score_all, score_fundamentals, grade_from_score
 
 CHUNK_SIZE = 100
 
@@ -32,7 +32,7 @@ def main():
     etf_set     = set(etf_tickers)
     print(f"  완료: 주식 {len(all_tickers)}개 / S&P 500 {len(sp500_tickers)}개 / ETF {len(etf_tickers)}개\n")
 
-    # ── 2. 청크별 스트리밍 다운로드 + 점수화 (메모리 최적화) ─────────
+    # ── 2. 청크별 스트리밍 다운로드 + 기술적 점수화 ─────────────────
     download_tickers = sorted(set(all_tickers) | etf_set)
     total_chunks = (len(download_tickers) + CHUNK_SIZE - 1) // CHUNK_SIZE
     print(f"▶ 1년치 데이터 다운로드 + 점수화 (총 {total_chunks}청크, 청크당 {CHUNK_SIZE}개)...")
@@ -88,44 +88,55 @@ def main():
     gc.collect()
     print(f"  S&P 500: {len(sp500_results)}개 / 외곽: {len(outer_results)}개 / ETF: {len(etf_results)}개\n")
 
-    # ── 5. 결과 캐시 저장 ─────────────────────────────────────────────
-    date_str     = t0.strftime("%Y-%m-%d")
     total_scored = len(sp500_results) + len(outer_results) + len(etf_results)
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    cache_payload = {
-        "date":       date_str,
-        "total":      total_scored,
-        "sp500_buy":  sorted([r for r in sp500_results if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:25],
-        "sp500_sell": sorted([r for r in sp500_results if r["score"] < -3],  key=lambda r: r["score"])[:25],
-        "etf_buy":    sorted([r for r in etf_results   if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:10],
-        "etf_sell":   sorted([r for r in etf_results   if r["score"] < -3],  key=lambda r: r["score"])[:10],
-        "outer_buy":  sorted([r for r in outer_results if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:15],
-        "outer_sell": sorted([r for r in outer_results if r["score"] < -3],  key=lambda r: r["score"])[:15],
+    date_str     = t0.strftime("%Y-%m-%d")
+
+    # ── 5. 후보 2배 선별 → PER/PBR 조회 → 밸류에이션 점수 반영 ──────
+    candidates = {
+        "sp500_buy":  sorted([r for r in sp500_results if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:50],
+        "sp500_sell": sorted([r for r in sp500_results if r["score"] < -3],  key=lambda r: r["score"])[:50],
+        "etf_buy":    sorted([r for r in etf_results   if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:20],
+        "etf_sell":   sorted([r for r in etf_results   if r["score"] < -3],  key=lambda r: r["score"])[:20],
+        "outer_buy":  sorted([r for r in outer_results if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:30],
+        "outer_sell": sorted([r for r in outer_results if r["score"] < -3],  key=lambda r: r["score"])[:30],
     }
     del sp500_results, outer_results, etf_results
     gc.collect()
 
-    # ── 6. 상위 결과 PER/PBR 조회 ────────────────────────────────────
-    top_tickers = {
-        r["ticker"]
-        for key, rows in cache_payload.items()
-        if isinstance(rows, list)
-        for r in rows
-    }
-    print(f"▶ 상위 결과 PER/PBR 조회 ({len(top_tickers)}개)...")
+    top_tickers = {r["ticker"] for rows in candidates.values() for r in rows}
+    print(f"▶ PER/PBR 조회 및 밸류에이션 점수 반영 ({len(top_tickers)}개)...")
     fund_map = fetch_fundamentals(list(top_tickers))
-    for key in ("sp500_buy", "sp500_sell", "etf_buy", "etf_sell", "outer_buy", "outer_sell"):
-        for r in cache_payload[key]:
-            fd       = fund_map.get(r["ticker"], {})
-            r["per"] = fd.get("per")
-            r["pbr"] = fd.get("pbr")
+
+    for rows in candidates.values():
+        for r in rows:
+            fd              = fund_map.get(r["ticker"], {})
+            r["per"]        = fd.get("per")
+            r["pbr"]        = fd.get("pbr")
+            r["fund_score"] = score_fundamentals(r["per"], r["pbr"])
+            new_total       = max(-15.0, min(15.0, r["score"] + r["fund_score"]))
+            r["score"]      = round(new_total, 1)
+            r["grade"]      = grade_from_score(new_total)
     del fund_map
     print("  완료\n")
+
+    # ── 6. 밸류에이션 반영 후 재정렬 + 최종 트리밍 ─────────────────
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    cache_payload = {
+        "date":       date_str,
+        "total":      total_scored,
+        "sp500_buy":  sorted([r for r in candidates["sp500_buy"]  if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:25],
+        "sp500_sell": sorted([r for r in candidates["sp500_sell"] if r["score"] < -3],  key=lambda r: r["score"])[:25],
+        "etf_buy":    sorted([r for r in candidates["etf_buy"]    if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:10],
+        "etf_sell":   sorted([r for r in candidates["etf_sell"]   if r["score"] < -3],  key=lambda r: r["score"])[:10],
+        "outer_buy":  sorted([r for r in candidates["outer_buy"]  if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:15],
+        "outer_sell": sorted([r for r in candidates["outer_sell"] if r["score"] < -3],  key=lambda r: r["score"])[:15],
+    }
+    del candidates
+    gc.collect()
 
     with open(os.path.join(CACHE_DIR, "last_results.json"), "w", encoding="utf-8") as f:
         json.dump(cache_payload, f, ensure_ascii=False)
 
-    # 날짜별 아카이브 저장 (위클리 집계용)
     daily_dir = os.path.join(CACHE_DIR, "daily")
     os.makedirs(daily_dir, exist_ok=True)
     with open(os.path.join(daily_dir, f"{date_str}.json"), "w", encoding="utf-8") as f:

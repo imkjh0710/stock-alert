@@ -121,13 +121,24 @@ def _read_cache(path: Path) -> dict | None:
 
 @st.cache_data(ttl=3600)
 def _fetch_holding_scores(tickers: tuple) -> dict:
-    """보유 종목 점수 — 동일 티커 목록이면 1시간 동안 재다운로드 안 함."""
+    """보유 종목 점수 — 동일 티커 목록이면 1시간 동안 재다운로드 안 함.
+    1y 기간 사용 (extract_signals 최소 200봉 요건 충족).
+    """
     try:
-        from fetcher import fetch_batch, apply_quality_filter
-        from scorer import score_all
-        raw      = fetch_batch(list(tickers), period="6mo", chunk_size=max(len(tickers), 1))
-        filtered = apply_quality_filter(raw)
-        return {r["ticker"]: r for r in score_all(filtered)}
+        from fetcher import fetch_batch, fetch_fundamentals
+        from scorer import score_all, score_fundamentals, grade_from_score
+        raw    = fetch_batch(list(tickers), period="1y", chunk_size=max(len(tickers), 1))
+        scored = {r["ticker"]: r for r in score_all(raw)}
+        fund_map = fetch_fundamentals(list(scored.keys()))
+        for ticker, r in scored.items():
+            fd              = fund_map.get(ticker, {})
+            r["per"]        = fd.get("per")
+            r["pbr"]        = fd.get("pbr")
+            r["fund_score"] = score_fundamentals(r["per"], r["pbr"])
+            new_total       = max(-15.0, min(15.0, r["score"] + r["fund_score"]))
+            r["score"]      = round(new_total, 1)
+            r["grade"]      = grade_from_score(new_total)
+        return scored
     except Exception:
         return {}
 
@@ -258,8 +269,8 @@ elif page == "📋 보유 종목":
     else:
         st.markdown(f"**총 {len(holdings)}개 종목**")
         for col, label in zip(
-            st.columns([2, 5, 4, 3, 2]),
-            ["**티커**", "**종목명**", "**등급**", "**점수**", ""],
+            st.columns([2, 4, 3, 2, 2, 2, 2, 1]),
+            ["**티커**", "**종목명**", "**등급**", "**합산**", "**밸류**", "**PER**", "**PBR**", ""],
         ):
             col.markdown(label)
         st.divider()
@@ -267,12 +278,15 @@ elif page == "📋 보유 종목":
         delete_idx = None
         for i, h in enumerate(holdings):
             sc = scores.get(h["ticker"])
-            c1, c2, c3, c4, c5 = st.columns([2, 5, 4, 3, 2])
+            c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([2, 4, 3, 2, 2, 2, 2, 1])
             c1.write(h["ticker"])
             c2.write(h.get("name", "—"))
             c3.write(sc["grade"] if sc else "—")
             c4.write(f"{sc['score']:+.1f}" if sc else "—")
-            if c5.button("🗑️", key=f"del_{i}", help="삭제"):
+            c5.write(f"{sc['fund_score']:+.0f}" if sc and sc.get("fund_score") is not None else "—")
+            c6.write(f"{sc['per']:.1f}"   if sc and sc.get("per") else "—")
+            c7.write(f"{sc['pbr']:.2f}"   if sc and sc.get("pbr") else "—")
+            if c8.button("🗑️", key=f"del_{i}", help="삭제"):
                 delete_idx = i
 
         if delete_idx is not None:
@@ -452,6 +466,7 @@ elif page == "🚀 분석 실행":
                                 "합산":    f"{r['score']:+.1f}",
                                 "장타":    f"{r.get('long_score',  0):+.0f}",
                                 "단타":    f"{r.get('short_score', 0):+.0f}",
+                                "밸류":    f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
                                 "추천":    r.get("recommendation", "—"),
                                 "등급":    r["grade"],
                                 "종가($)": r["close"],

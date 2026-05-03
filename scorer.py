@@ -53,6 +53,37 @@ def _score_vp(c: float, p: float, zones: list) -> float:
     return score
 
 
+def grade_from_score(total: float) -> str:
+    if total >= 8:    return "🟢🟢 매수 강력 추천"
+    elif total >= 4:  return "🟢 매수 추천"
+    elif total >= -3: return "⚪ 관망"
+    elif total >= -7: return "🔴 매도 추천"
+    else:             return "🔴🔴 매도 강력 추천"
+
+
+def score_fundamentals(per: float | None, pbr: float | None) -> float:
+    """PER/PBR 밸류에이션 추가 점수 (-3 ~ +3).
+    기술적 점수에 더해 최종 합산에 반영됨.
+    """
+    score = 0.0
+
+    if per is not None:
+        if   per < 0:    score -= 1   # 적자
+        elif per <= 15:  score += 2   # 저PER — 저평가
+        elif per <= 25:  score += 1   # 적정
+        # 25~50: 중립
+        elif per <= 100: score -= 1   # 고평가
+        else:            score -= 2   # 극고평가
+
+    if pbr is not None and pbr > 0:
+        if   pbr < 1:   score += 1   # 청산가 이하
+        elif pbr <= 5:  score += 0   # 적정
+        elif pbr <= 15: score -= 1   # 높은 편
+        else:           score -= 2   # 극고평가
+
+    return round(max(-3.0, min(3.0, score)), 1)
+
+
 def score_ticker(s: dict) -> tuple[float, str, float, float, str]:
     """
     Returns: (total_score, grade, long_score, short_score, recommendation)
@@ -133,11 +164,7 @@ def score_ticker(s: dict) -> tuple[float, str, float, float, str]:
     short_score = round(short_score, 1)
     total = max(-15.0, min(15.0, round(long_score + short_score, 1)))
 
-    if total >= 8:    grade = "🟢🟢 매수 강력 추천"
-    elif total >= 4:  grade = "🟢 매수 추천"
-    elif total >= -3: grade = "⚪ 관망"
-    elif total >= -7: grade = "🔴 매도 추천"
-    else:             grade = "🔴🔴 매도 강력 추천"
+    grade = grade_from_score(total)
 
     # ── 9-way 추천 텍스트 ─────────────────────────────────────────────
     long_dir  = "buy"  if long_score  >= 2 else ("sell" if long_score  <= -2 else "neutral")
