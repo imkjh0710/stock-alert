@@ -54,6 +54,14 @@ _DEFAULTS = {
     "volume_t2":              3,
     "volume_t3":              5,
     "vp_window":             90,
+    # ── PER/PBR 밸류에이션 ───────────────────────────────────────────
+    "per_cheap_strong":      15,   # ≤ → +2 (저PER 강한)
+    "per_cheap":             25,   # ≤ → +1 (저PER)
+    "per_pricey":            50,   # >  → -1 (고PER)
+    "per_pricey_strong":    100,   # >  → -2 (고PER 강한)
+    "pbr_cheap":              1,   # <  → +1 (저PBR)
+    "pbr_pricey":             5,   # >  → -1 (고PBR)
+    "pbr_pricey_strong":     15,   # >  → -2 (고PBR 강한)
 }
 
 
@@ -83,6 +91,14 @@ RSI_OVERBOUGHT        = float(_s["rsi_overbought"])
 RSI_OVERBOUGHT_STRONG = float(_s["rsi_overbought_strong"])
 RSI_OVERSOLD          = float(_s["rsi_oversold"])
 RSI_OVERSOLD_STRONG   = float(_s["rsi_oversold_strong"])
+
+PER_CHEAP_STRONG  = int(_s.get("per_cheap_strong",     15))
+PER_CHEAP         = int(_s.get("per_cheap",             25))
+PER_PRICEY        = int(_s.get("per_pricey",            50))
+PER_PRICEY_STRONG = int(_s.get("per_pricey_strong",    100))
+PBR_CHEAP         = int(_s.get("pbr_cheap",              1))
+PBR_PRICEY        = int(_s.get("pbr_pricey",             5))
+PBR_PRICEY_STRONG = int(_s.get("pbr_pricey_strong",     15))
 
 # 내림차순 정렬 (가장 높은 배수부터 검사)
 _thresholds = sorted(

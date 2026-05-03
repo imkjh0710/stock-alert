@@ -45,6 +45,14 @@ DEFAULT_SETTINGS = {
     "div_max_payout":        85,   # 최대 Payout 비율 (%)
     "div_min_consec":         5,   # 최소 연속 배당 증가 연수
     "div_min_price_growth":  20,   # 최소 주가성장률 (%)
+    # ── PER/PBR 밸류에이션 ─────────────────────────────────────
+    "per_cheap_strong":      15,   # ≤ → 밸류 +2점
+    "per_cheap":             25,   # ≤ → 밸류 +1점
+    "per_pricey":            50,   # >  → 밸류 -1점
+    "per_pricey_strong":    100,   # >  → 밸류 -2점
+    "pbr_cheap":              1,   # <  → 밸류 +1점
+    "pbr_pricey":             5,   # >  → 밸류 -1점
+    "pbr_pricey_strong":     15,   # >  → 밸류 -2점
 }
 
 # ── GitHub 연동 (Render 재배포 후에도 설정/보유 종목 유지) ────────────
@@ -223,6 +231,16 @@ if page == "⚙️ 지표 설정":
     row("최대 FCF 배당성향 (%)  →  초과 종목 제외 (잉여현금 대비 배당)", "div_max_payout",     50,  200)
     row("최소 연속 배당 증가 (년)  →  미만 종목 제외",               "div_min_consec",        0,   50)
     row("최소 주가성장률 (%)  →  미만 종목 제외 (-50 = 사실상 미적용)", "div_min_price_growth", -50, 50)
+
+    st.markdown("#### PER / PBR (밸류에이션)")
+    st.caption("합산 점수에 최대 ±3점 반영 | 합산 = 장타 + 단타 + 밸류")
+    row("저PER 강한 기준  →  밸류 **+2점**  (이하일 때)",  "per_cheap_strong",   1,  50)
+    row("저PER 기준  →  밸류 **+1점**  (이하일 때)",       "per_cheap",          1, 100)
+    row("고PER 기준  →  밸류 **-1점**  (초과할 때)",       "per_pricey",        10, 300)
+    row("고PER 강한 기준  →  밸류 **-2점**  (초과할 때)",  "per_pricey_strong", 20, 500)
+    row("저PBR 기준  →  밸류 **+1점**  (미만일 때)",       "pbr_cheap",          1,  10)
+    row("고PBR 기준  →  밸류 **-1점**  (초과할 때)",       "pbr_pricey",         1,  50)
+    row("고PBR 강한 기준  →  밸류 **-2점**  (초과할 때)",  "pbr_pricey_strong",  2, 100)
 
     st.markdown("---")
     c_save, c_reset, _ = st.columns([2, 2, 6])

@@ -8,6 +8,8 @@ from config import (
     RSI_OVERBOUGHT, RSI_OVERBOUGHT_STRONG,
     RSI_OVERSOLD,   RSI_OVERSOLD_STRONG,
     VOLUME_THRESHOLDS, VOLUME_POINTS,
+    PER_CHEAP_STRONG, PER_CHEAP, PER_PRICEY, PER_PRICEY_STRONG,
+    PBR_CHEAP, PBR_PRICEY, PBR_PRICEY_STRONG,
 )
 
 # ── 9-way 추천 매트릭스 ────────────────────────────────────────────────
@@ -63,23 +65,23 @@ def grade_from_score(total: float) -> str:
 
 def score_fundamentals(per: float | None, pbr: float | None) -> float:
     """PER/PBR 밸류에이션 추가 점수 (-3 ~ +3).
-    기술적 점수에 더해 최종 합산에 반영됨.
+    임계값은 settings.json → config.py 에서 로드.
     """
     score = 0.0
 
     if per is not None:
-        if   per < 0:    score -= 1   # 적자
-        elif per <= 15:  score += 2   # 저PER — 저평가
-        elif per <= 25:  score += 1   # 적정
-        # 25~50: 중립
-        elif per <= 100: score -= 1   # 고평가
-        else:            score -= 2   # 극고평가
+        if   per < 0:                    score -= 1   # 적자
+        elif per <= PER_CHEAP_STRONG:    score += 2   # 저PER 강한
+        elif per <= PER_CHEAP:           score += 1   # 저PER
+        elif per <= PER_PRICEY:          score += 0   # 중립
+        elif per <= PER_PRICEY_STRONG:   score -= 1   # 고PER
+        else:                            score -= 2   # 고PER 강한
 
     if pbr is not None and pbr > 0:
-        if   pbr < 1:   score += 1   # 청산가 이하
-        elif pbr <= 5:  score += 0   # 적정
-        elif pbr <= 15: score -= 1   # 높은 편
-        else:           score -= 2   # 극고평가
+        if   pbr < PBR_CHEAP:            score += 1   # 저PBR
+        elif pbr <= PBR_PRICEY:          score += 0   # 중립
+        elif pbr <= PBR_PRICEY_STRONG:   score -= 1   # 고PBR
+        else:                            score -= 2   # 고PBR 강한
 
     return round(max(-3.0, min(3.0, score)), 1)
 
