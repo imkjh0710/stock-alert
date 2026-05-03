@@ -480,22 +480,25 @@ elif page == "🚀 분석 실행":
                         records = []
                         for r in rows:
                             pred = r.get("prediction") or {}
-                            lo   = pred.get("short_lo_68")
-                            hi   = pred.get("short_hi_68")
-                            week = f"${lo:.0f}~${hi:.0f}" if lo is not None and hi is not None else "—"
+                            def _rng(lo_k: str, hi_k: str) -> str:
+                                lo = pred.get(lo_k)
+                                hi = pred.get(hi_k)
+                                return f"${lo:.0f}~${hi:.0f}" if lo is not None and hi is not None else "—"
                             records.append({
-                                "티커":    r["ticker"],
-                                "합산":    f"{r['score']:+.1f}",
-                                "장타":    f"{r.get('long_score',  0):+.0f}",
-                                "단타":    f"{r.get('short_score', 0):+.0f}",
-                                "밸류":    f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
-                                "추천":    r.get("recommendation", "—"),
-                                "등급":    r["grade"],
-                                "종가($)": r["close"],
-                                "등락(%)": f"{r['change_pct']:+.1f}%",
-                                "1주범위": week,
-                                "PER":     f"{r['per']:.1f}" if r.get("per") else "N/A",
-                                "PBR":     f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
+                                "티커":     r["ticker"],
+                                "합산":     f"{r['score']:+.1f}",
+                                "장타":     f"{r.get('long_score',  0):+.0f}",
+                                "단타":     f"{r.get('short_score', 0):+.0f}",
+                                "밸류":     f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
+                                "추천":     r.get("recommendation", "—"),
+                                "등급":     r["grade"],
+                                "종가($)":  r["close"],
+                                "등락(%)":  f"{r['change_pct']:+.1f}%",
+                                "20일예측": _rng("pred_20_lo", "pred_20_hi"),
+                                "60일예측": _rng("pred_60_lo", "pred_60_hi"),
+                                "90일예측": _rng("pred_90_lo", "pred_90_hi"),
+                                "PER":      f"{r['per']:.1f}" if r.get("per") else "N/A",
+                                "PBR":      f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
                             })
                         st.dataframe(
                             pd.DataFrame(records),

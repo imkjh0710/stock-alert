@@ -173,13 +173,39 @@ def ttm_div(div_series: pd.Series) -> float:
 # ── Payout / FCF 병렬 조회 ───────────────────────────────────────────────
 def _fetch_one_info(ticker: str) -> tuple[str, dict]:
     try:
-        info = yf.Ticker(ticker).info
+        t    = yf.Ticker(ticker)
+        info = t.info
         per  = info.get("trailingPE")
         pbr  = info.get("priceToBook")
+
+        # freeCashflow는 .info에 없는 경우가 많아 cashflow 재무제표로 fallback
+        fcf = info.get("freeCashflow")
+        if not fcf:
+            try:
+                cf = t.cashflow
+                if cf is not None and not cf.empty:
+                    fcf_rows = [r for r in cf.index if "Free Cash Flow" in str(r)]
+                    if fcf_rows:
+                        v = cf.loc[fcf_rows[0]].iloc[0]
+                        if pd.notna(v) and float(v) > 0:
+                            fcf = float(v)
+                    if not fcf:
+                        ocf_rows = [r for r in cf.index if "Operating" in str(r) and "Cash" in str(r)]
+                        cap_rows = [r for r in cf.index if "Capital Expenditure" in str(r)]
+                        if ocf_rows and cap_rows:
+                            ocf = cf.loc[ocf_rows[0]].iloc[0]
+                            cap = cf.loc[cap_rows[0]].iloc[0]
+                            if pd.notna(ocf) and pd.notna(cap):
+                                v = float(ocf) + float(cap)
+                                if v > 0:
+                                    fcf = v
+            except Exception:
+                pass
+
         return ticker, {
             "payoutRatio":              info.get("payoutRatio"),
             "fiveYearAvgDividendYield": info.get("fiveYearAvgDividendYield"),
-            "freeCashflow":             info.get("freeCashflow"),
+            "freeCashflow":             fcf,
             "sharesOutstanding":        info.get("sharesOutstanding"),
             "trailingPE":               per,
             "priceToBook":              pbr,
