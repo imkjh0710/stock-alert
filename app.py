@@ -233,7 +233,7 @@ if page == "⚙️ 지표 설정":
     row("최소 주가성장률 (%)  →  미만 종목 제외 (-50 = 사실상 미적용)", "div_min_price_growth", -50, 50)
 
     st.markdown("#### PER / PBR (밸류에이션)")
-    st.caption("합산 점수에 최대 ±3점 반영 | 합산 = 장타 + 단타 + 밸류")
+    st.caption("합산 점수에 최대 ±3점 반영 | 합산 = 장타 + 단타 + 가치점수")
     row("저PER 강한 기준  →  밸류 **+2점**  (이하일 때)",  "per_cheap_strong",   1,  50)
     row("저PER 기준  →  밸류 **+1점**  (이하일 때)",       "per_cheap",          1, 100)
     row("고PER 기준  →  밸류 **-1점**  (초과할 때)",       "per_pricey",        10, 300)
@@ -288,7 +288,7 @@ elif page == "📋 보유 종목":
         st.markdown(f"**총 {len(holdings)}개 종목**")
         for col, label in zip(
             st.columns([2, 4, 3, 2, 2, 2, 2, 1]),
-            ["**티커**", "**종목명**", "**등급**", "**합산**", "**밸류**", "**PER**", "**PBR**", ""],
+            ["**티커**", "**종목명**", "**등급**", "**합산**", "**가치점수**", "**PER**", "**PBR**", ""],
         ):
             col.markdown(label)
         st.divider()
@@ -489,11 +489,11 @@ elif page == "🚀 분석 실행":
                                 "합산":     f"{r['score']:+.1f}",
                                 "장타":     f"{r.get('long_score',  0):+.0f}",
                                 "단타":     f"{r.get('short_score', 0):+.0f}",
-                                "밸류":     f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
+                                "가치점수":  f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
                                 "추천":     r.get("recommendation", "—"),
                                 "등급":     r["grade"],
                                 "종가($)":  r["close"],
-                                "등락(%)":  f"{r['change_pct']:+.1f}%",
+                                "등락률":   f"{r['change_pct']:+.1f}%",
                                 "20일예측": _rng("pred_20_lo", "pred_20_hi"),
                                 "60일예측": _rng("pred_60_lo", "pred_60_hi"),
                                 "90일예측": _rng("pred_90_lo", "pred_90_hi"),
