@@ -16,7 +16,14 @@
   "div_years": 5,
   "div_min_dgr": 5,
   "div_min_yield": 3,
-  "div_max_payout": 85,
+  "div_max_payout": 90,
   "div_min_consec": 5,
-  "div_min_price_growth": 20
+  "div_min_price_growth": 20,
+  "per_cheap_strong": 15,
+  "per_cheap": 25,
+  "per_pricey": 50,
+  "per_pricey_strong": 100,
+  "pbr_cheap": 1,
+  "pbr_pricey": 5,
+  "pbr_pricey_strong": 15
 }
