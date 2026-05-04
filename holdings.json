@@ -46,5 +46,9 @@
   {
     "ticker": "TSLL",
     "name": "TSLL"
+  },
+  {
+    "ticker": "FNGU",
+    "name": "FNGU"
   }
 ]
