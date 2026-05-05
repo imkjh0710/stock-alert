@@ -92,19 +92,45 @@ def apply_quality_filter(
     return qualified
 
 
-def fetch_fundamentals(tickers: list[str], max_workers: int = 8) -> dict[str, dict]:
+def fetch_fundamentals(tickers: list[str], max_workers: int = 4) -> dict[str, dict]:
     """PER(trailingPE), PBR(priceToBook) 병렬 조회."""
     def _one(t: str) -> tuple[str, dict]:
-        try:
-            info = yf.Ticker(t).info
-            per  = info.get("trailingPE")
-            pbr  = info.get("priceToBook")
-            return t, {
-                "per": round(float(per), 1) if per and float(per) > 0 else None,
-                "pbr": round(float(pbr), 2) if pbr and float(pbr) > 0 else None,
-            }
-        except Exception:
-            return t, {"per": None, "pbr": None}
+        for attempt in range(3):
+            try:
+                ticker = yf.Ticker(t)
+                info = ticker.info or {}
+                per  = info.get("trailingPE")
+                pbr  = info.get("priceToBook")
+
+                # PER fallback: trailingEps + currentPrice
+                if not (per and float(per) > 0):
+                    eps   = info.get("trailingEps")
+                    price = info.get("currentPrice") or info.get("regularMarketPrice")
+                    if eps and price and float(eps) > 0 and float(price) > 0:
+                        per = round(float(price) / float(eps), 1)
+
+                # PBR fallback: try fast_info
+                if not (pbr and float(pbr) > 0):
+                    try:
+                        fi = ticker.fast_info
+                        pbr = getattr(fi, "price_to_book", None)
+                    except Exception:
+                        pass
+
+                per_ok = per and float(per) > 0
+                pbr_ok = pbr and float(pbr) > 0
+                if not per_ok and not pbr_ok and attempt < 2:
+                    time.sleep(2 ** attempt + 1)
+                    continue
+
+                return t, {
+                    "per": round(float(per), 1) if per_ok else None,
+                    "pbr": round(float(pbr), 2) if pbr_ok else None,
+                }
+            except Exception:
+                if attempt < 2:
+                    time.sleep(2 ** attempt + 1)
+        return t, {"per": None, "pbr": None}
 
     results: dict[str, dict] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
