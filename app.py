@@ -492,6 +492,7 @@ elif page == "🚀 분석 실행":
                                 "가치점수":  f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
                                 "추천":     r.get("recommendation", "—"),
                                 "등급":     r["grade"],
+                                "패턴":     ", ".join(r.get("patterns", [])) or "—",
                                 "종가($)":  r["close"],
                                 "등락률":   f"{r['change_pct']:+.1f}%",
                                 "20일예측": _rng("pred_20_lo", "pred_20_hi"),
