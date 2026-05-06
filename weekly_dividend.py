@@ -67,8 +67,9 @@ def main():
 
     # ── 카테고리 분류 ─────────────────────────────────────────────────
     growth_top = sorted(
-        [r for r in results if r.get("dgr_long") is not None and not r.get("had_cut")],
-        key=lambda r: (r.get("dgr_long") or 0, r["score"]), reverse=True,
+        [r for r in results if not r.get("had_cut")],
+        key=lambda r: (r.get("dgr_long") or r.get("dgr_short") or 0, r["score"]),
+        reverse=True,
     )
     royalty = sorted(
         [r for r in results if r.get("consecutive_growth", 0) >= 25],
