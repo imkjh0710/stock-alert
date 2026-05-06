@@ -510,17 +510,10 @@ elif page == "🚀 분석 실행":
                                 "PER":      f"{r['per']:.1f}" if r.get("per") else "N/A",
                                 "PBR":      f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
                             })
-                        _pred_cols = {"20일예측", "60일예측", "90일예측"}
-                        def _color_pred(row):
-                            try:
-                                val = float(str(row["합산"]).replace("+", ""))
-                            except Exception:
-                                val = 0
-                            color = "#d4edda" if val > 0 else ("#f8d7da" if val < 0 else "")
-                            return [f"background-color: {color}" if color and col in _pred_cols else ""
-                                    for col in row.index]
-                        styled = pd.DataFrame(records).style.apply(_color_pred, axis=1)
-                        st.dataframe(styled, use_container_width=True, hide_index=True)
+                        st.dataframe(
+                            pd.DataFrame(records),
+                            use_container_width=True, hide_index=True,
+                        )
                     else:
                         st.info("해당 항목 없음 (관망 구간에 속하는 종목만 있거나 데이터 없음)")
         else:
