@@ -34,6 +34,9 @@ jobs:
       - name: Run dividend analysis
         run: python weekly_dividend.py
 
+      - name: Analyze holdings
+        run: python analyze_holdings.py || true
+
       - name: Commit updated cache
         run: |
           git config user.name "github-actions[bot]"

@@ -76,6 +76,9 @@ def _stars(pts: float) -> str:
     n = min(5, max(1, round(abs(pts))))
     return "★" * n + "☆" * (5 - n)
 
+def _score_tag(eff: float) -> str:
+    return f"{eff:+.1f}"
+
 
 # ── 9-way 추천 매트릭스 ─────────────────────────────────────────────
 _RECOMMENDATION = {
@@ -187,7 +190,7 @@ def _calc_pattern_scores(
             eff = -5.0 if conf >= 0.7 else -2.5
         candle_raw += eff
         kr = _PAT_KR.get(name, name)
-        found_labels.append(f"{kr}({_stars(pts)})")
+        found_labels.append(f"{kr}({_score_tag(eff)})")
 
     # 거래량 2배+ 보너스
     if vol_ratio >= 2:
@@ -213,7 +216,7 @@ def _calc_pattern_scores(
             eff = -5.0 if conf >= 0.7 else -2.5
         chart_raw += eff
         kr = _PAT_KR.get(name, name)
-        found_labels.append(f"{kr}({_stars(pts)})")
+        found_labels.append(f"{kr}({_score_tag(eff)})")
 
     if vol_ratio >= 2:
         if chart_raw > 0:   chart_raw += 1.0
@@ -233,14 +236,14 @@ def _calc_pattern_scores(
     return candle_score, chart_score, ma_bonus, found_labels
 
 
-def score_ticker(s: dict, df=None) -> tuple[float, str, float, float, str, list[str]]:
+def score_ticker(s: dict, df=None) -> tuple[float, str, float, float, str, list[str], float]:
     """
-    Returns: (total_score, grade, long_score, short_score, recommendation, patterns)
+    Returns: (total_score, grade, long_score, short_score, recommendation, patterns, pattern_score)
     """
     c = s["close"]
     p = s["prev_close"]
     if c is None or p is None or p == 0:
-        return 0.0, "⚪ 관망", 0.0, 0.0, "⚪ 방향 탐색 중", []
+        return 0.0, "⚪ 관망", 0.0, 0.0, "⚪ 방향 탐색 중", [], 0.0
 
     long_score  = 0.0
     short_score = 0.0
@@ -305,6 +308,7 @@ def score_ticker(s: dict, df=None) -> tuple[float, str, float, float, str, list[
 
     # ── 패턴 점수 ─────────────────────────────────────────────────────
     found_patterns: list[str] = []
+    pattern_score = 0.0
     if _PATTERNS_OK and df is not None:
         try:
             candle_pats = scan_candle_patterns(df)
@@ -312,8 +316,9 @@ def score_ticker(s: dict, df=None) -> tuple[float, str, float, float, str, list[
             c_score, ch_score, ma_bonus, found_patterns = _calc_pattern_scores(
                 candle_pats, chart_pats, s
             )
-            short_score += c_score
-            long_score  += ch_score + ma_bonus
+            short_score   += c_score
+            long_score    += ch_score + ma_bonus
+            pattern_score  = round(c_score + ch_score + ma_bonus, 1)
         except Exception:
             pass
 
@@ -329,7 +334,7 @@ def score_ticker(s: dict, df=None) -> tuple[float, str, float, float, str, list[
     short_dir = "buy"  if short_score >= 6 else ("sell" if short_score <= -6 else "neutral")
     recommendation = _RECOMMENDATION[(long_dir, short_dir)]
 
-    return total, grade, long_score, short_score, recommendation, found_patterns
+    return total, grade, long_score, short_score, recommendation, found_patterns, pattern_score
 
 
 def score_all(data: dict, asset_type: str = "STOCK") -> list[dict]:
@@ -339,7 +344,7 @@ def score_all(data: dict, asset_type: str = "STOCK") -> list[dict]:
         if signals is None:
             continue
         try:
-            total, grade, long_score, short_score, recommendation, patterns = score_ticker(signals, df)
+            total, grade, long_score, short_score, recommendation, patterns, pattern_score = score_ticker(signals, df)
             c, p = signals["close"], signals["prev_close"]
             change_pct = (c - p) / p * 100 if p else 0.0
             prediction = predict_ranges(df, signals)
@@ -358,6 +363,7 @@ def score_all(data: dict, asset_type: str = "STOCK") -> list[dict]:
                 "asset_type":     asset_type,
                 "prediction":     prediction,
                 "patterns":       patterns,
+                "pattern_score":  pattern_score,
             })
         except Exception:
             pass

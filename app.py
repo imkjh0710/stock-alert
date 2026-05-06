@@ -16,11 +16,12 @@ import yfinance as yf
 BASE_DIR    = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
 
-SETTINGS_FILE   = BASE_DIR / "settings.json"
-HOLDINGS_FILE   = BASE_DIR / "holdings.json"
-LOGS_DIR        = BASE_DIR / "logs"
-LAST_RESULTS    = BASE_DIR / "cache" / "last_results.json"
-LAST_DIVIDEND   = BASE_DIR / "cache" / "last_dividend.json"
+SETTINGS_FILE       = BASE_DIR / "settings.json"
+HOLDINGS_FILE       = BASE_DIR / "holdings.json"
+LOGS_DIR            = BASE_DIR / "logs"
+LAST_RESULTS        = BASE_DIR / "cache" / "last_results.json"
+LAST_DIVIDEND       = BASE_DIR / "cache" / "last_dividend.json"
+HOLDINGS_ANALYSIS   = BASE_DIR / "cache" / "holdings_analysis.json"
 
 # ── 기본 설정값 ───────────────────────────────────────────────────────
 DEFAULT_SETTINGS = {
@@ -264,22 +265,28 @@ elif page == "📋 보유 종목":
     st.title("📋 보유 종목 관리")
     holdings = load_holdings()
 
-    # 현재 점수 조회 (1시간 캐시)
-    scores: dict = {}
-    if holdings:
-        with st.spinner("보유 종목 최신 점수 조회 중..."):
-            scores = _fetch_holding_scores(tuple(h["ticker"] for h in holdings))
-
-    # 배당 캐시 로드 (파일 변경 시에만 재로드)
+    # ── 데이터 소스: holdings_analysis.json 우선, 없으면 실시간 조회 ──
+    scores: dict  = {}
     div_map: dict = {}
-    _dc = _read_cache(LAST_DIVIDEND)
-    if _dc:
-        for _r in _dc.get("holdings_data", []):
-            div_map[_r["ticker"]] = _r
-        for _cat in ("growth_top", "royalty", "high_yield", "risk"):
-            for _r in _dc.get(_cat, []):
-                if _r["ticker"] not in div_map:
-                    div_map[_r["ticker"]] = _r
+
+    _ha = _read_cache(HOLDINGS_ANALYSIS)
+    if _ha:
+        scores  = _ha.get("scores", {})
+        div_map = {r["ticker"]: r for r in _ha.get("dividends", [])}
+        st.info(f"📅 분析 기준일: **{_ha.get('date', '—')}** — 매일 자동 업데이트됩니다.")
+    else:
+        # fallback: 실시간 조회 (1시간 캐시)
+        if holdings:
+            with st.spinner("보유 종목 최신 점수 조회 중..."):
+                scores = _fetch_holding_scores(tuple(h["ticker"] for h in holdings))
+        _dc = _read_cache(LAST_DIVIDEND)
+        if _dc:
+            for _r in _dc.get("holdings_data", []):
+                div_map[_r["ticker"]] = _r
+            for _cat in ("growth_top", "royalty", "high_yield", "risk"):
+                for _r in _dc.get(_cat, []):
+                    if _r["ticker"] not in div_map:
+                        div_map[_r["ticker"]] = _r
 
     # 종목 목록
     if not holdings:
@@ -484,12 +491,14 @@ elif page == "🚀 분석 실행":
                                 lo = pred.get(lo_k)
                                 hi = pred.get(hi_k)
                                 return f"${lo:.0f}~${hi:.0f}" if lo is not None and hi is not None else "—"
+                            pat_sc = r.get("pattern_score")
                             records.append({
                                 "티커":     r["ticker"],
                                 "합산":     f"{r['score']:+.1f}",
                                 "장타":     f"{r.get('long_score',  0):+.0f}",
                                 "단타":     f"{r.get('short_score', 0):+.0f}",
-                                "가치점수":  f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
+                                "가치점수": f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
+                                "패턴점수": f"{pat_sc:+.1f}" if pat_sc is not None else "—",
                                 "추천":     r.get("recommendation", "—"),
                                 "등급":     r["grade"],
                                 "패턴":     ", ".join(r.get("patterns", [])) or "—",
@@ -501,10 +510,17 @@ elif page == "🚀 분석 실행":
                                 "PER":      f"{r['per']:.1f}" if r.get("per") else "N/A",
                                 "PBR":      f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
                             })
-                        st.dataframe(
-                            pd.DataFrame(records),
-                            use_container_width=True, hide_index=True,
-                        )
+                        _pred_cols = {"20일예측", "60일예측", "90일예측"}
+                        def _color_pred(row):
+                            try:
+                                val = float(str(row["합산"]).replace("+", ""))
+                            except Exception:
+                                val = 0
+                            color = "#d4edda" if val > 0 else ("#f8d7da" if val < 0 else "")
+                            return [f"background-color: {color}" if color and col in _pred_cols else ""
+                                    for col in row.index]
+                        styled = pd.DataFrame(records).style.apply(_color_pred, axis=1)
+                        st.dataframe(styled, use_container_width=True, hide_index=True)
                     else:
                         st.info("해당 항목 없음 (관망 구간에 속하는 종목만 있거나 데이터 없음)")
         else:
@@ -659,10 +675,13 @@ elif page == "💰 배당 분석":
                 dgr_l   = r.get("dgr_long")
                 dgr_s   = r.get("dgr_short")
                 fcf_pay = r.get("fcf_payout")
+                pat_sc = r.get("pattern_score")
                 records.append({
                     "티커":                            r["ticker"],
                     "등급":                            r.get("grade", "—"),
                     "점수":                            f"{r['score']:+.0f}",
+                    "패턴점수":                        f"{pat_sc:+.1f}" if pat_sc is not None else "—",
+                    "패턴":                            r.get("patterns_str") or "—",
                     f"배당성장률({ly}년·연평균)":      f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
                     f"배당성장률({sy}년·연평균)":      f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
                     "연속 배당 증가":                   f"{consec}년 {king}".strip(),

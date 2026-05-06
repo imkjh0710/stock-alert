@@ -13,6 +13,16 @@ from config import CACHE_DIR
 from universe import get_universe
 from dividend_analyzer import analyze_dividends
 
+try:
+    from fetcher import fetch_batch
+    from patterns import scan_candle_patterns
+    from chart_patterns import scan_chart_patterns
+    from scorer import _calc_pattern_scores
+    from indicators import extract_signals
+    _PAT_OK = True
+except ImportError:
+    _PAT_OK = False
+
 
 def _load_holdings() -> list[str]:
     env = os.getenv("MY_HOLDINGS")
@@ -76,6 +86,36 @@ def main():
          or (r.get("payout_ratio") is not None and (r.get("payout_ratio") or 0) > 0.9)],
         key=lambda r: r.get("payout_ratio") or 0, reverse=True,
     )
+
+    # ── 패턴 분析 (최종 표시 종목 한정) ──────────────────────────────
+    if _PAT_OK:
+        display_set: set[str] = set()
+        for r in growth_top[:15]:  display_set.add(r["ticker"])
+        for r in royalty[:10]:     display_set.add(r["ticker"])
+        for r in high_yield[:10]:  display_set.add(r["ticker"])
+        for r in risk[:5]:         display_set.add(r["ticker"])
+        for t in holdings:         display_set.add(t)
+        display_set = {t for t in display_set if t in result_map}
+
+        if display_set:
+            print(f"▶ 패턴 분析 ({len(display_set)}개)...")
+            ohlcv = fetch_batch(list(display_set), period="1y",
+                                chunk_size=max(len(display_set), 1))
+            for ticker, df in ohlcv.items():
+                if ticker not in result_map:
+                    continue
+                try:
+                    signals = extract_signals(df)
+                    if signals is None:
+                        continue
+                    c_pats  = scan_candle_patterns(df)
+                    ch_pats = scan_chart_patterns(df)
+                    c_sc, ch_sc, ma_b, labels = _calc_pattern_scores(c_pats, ch_pats, signals)
+                    result_map[ticker]["pattern_score"] = round(c_sc + ch_sc + ma_b, 1)
+                    result_map[ticker]["patterns_str"]  = ", ".join(labels) or "—"
+                except Exception:
+                    pass
+            print("  완료\n")
 
     # ── 캐시 저장 ─────────────────────────────────────────────────────
     def _clean(r: dict) -> dict:
