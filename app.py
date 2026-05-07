@@ -265,20 +265,20 @@ elif page == "📋 보유 종목":
     st.title("📋 보유 종목 관리")
     holdings = load_holdings()
 
-    # ── 데이터 소스: holdings_analysis.json 우선, 없으면 실시간 조회 ──
-    scores: dict  = {}
-    div_map: dict = {}
+    # ── 점수: 항상 실시간 조회 (1시간 캐시) ─────────────────────────────
+    scores: dict = {}
+    if holdings:
+        with st.spinner("보유 종목 최신 점수 조회 중..."):
+            scores = _fetch_holding_scores(tuple(h["ticker"] for h in holdings))
 
+    # ── 배당 데이터: holdings_analysis.json → last_dividend.json 순으로 시도 ──
+    div_map: dict = {}
     _ha = _read_cache(HOLDINGS_ANALYSIS)
-    if _ha:
-        scores  = _ha.get("scores", {})
-        div_map = {r["ticker"]: r for r in _ha.get("dividends", [])}
-        st.info(f"📅 분析 기준일: **{_ha.get('date', '—')}** — 매일 자동 업데이트됩니다.")
+    if _ha and _ha.get("dividends"):
+        for _r in _ha.get("dividends", []):
+            div_map[_r["ticker"]] = _r
+        st.caption(f"배당 분析 기준일: **{_ha.get('date', '—')}** — 매일 자동 업데이트")
     else:
-        # fallback: 실시간 조회 (1시간 캐시)
-        if holdings:
-            with st.spinner("보유 종목 최신 점수 조회 중..."):
-                scores = _fetch_holding_scores(tuple(h["ticker"] for h in holdings))
         _dc = _read_cache(LAST_DIVIDEND)
         if _dc:
             for _r in _dc.get("holdings_data", []):
