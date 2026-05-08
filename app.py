@@ -128,6 +128,16 @@ def _read_cache(path: Path) -> dict | None:
         return None
     return _load_json(str(path), path.stat().st_mtime)
 
+def _fmt_payout(r: dict) -> str:
+    """FCF배당성향 → 없으면 EPS(payoutRatio) 폴백"""
+    fcf = r.get("fcf_payout")
+    if fcf is not None:
+        return f"{fcf*100:.0f}% (FCF)"
+    pr = r.get("payout_ratio")
+    if pr is not None and 0 < float(pr) < 10:
+        return f"{float(pr)*100:.0f}% (EPS)"
+    return "N/A"
+
 @st.cache_data(ttl=3600)
 def _fetch_holding_scores(tickers: tuple) -> dict:
     """보유 종목 점수 — 동일 티커 목록이면 1시간 동안 재다운로드 안 함.
@@ -344,7 +354,7 @@ elif page == "📋 보유 종목":
                         "티커": t, "배당등급": "—", "배당점수": "—",
                         "배당률(최근1년)": "—", "배당성장률(5년·연평균)": "—",
                         "배당성장률(2년·연평균)": "—", "연속 배당 증가": "—",
-                        "FCF 배당성향": "—",
+                        "배당성향": "—",
                         "주가수익(1Y)": "—", "주가수익(2Y)": "—", "주가수익(3Y)": "—",
                         "주가수익(4Y)": "—", "주가수익(5Y)": "—",
                         "배당컷": "—", "PER": "—", "PBR": "—",
@@ -355,11 +365,10 @@ elif page == "📋 보유 종목":
                 elif consec >= 25: king = "🏆귀족"
                 elif consec >= 10: king = "⭐챔피언"
                 else:              king = ""
-                dgr_l   = dr.get("dgr_long")
-                dgr_s   = dr.get("dgr_short")
-                ly      = dr.get("dgr_long_years",  5)
-                sy      = dr.get("dgr_short_years", 2)
-                fcf_pay = dr.get("fcf_payout")
+                dgr_l = dr.get("dgr_long")
+                dgr_s = dr.get("dgr_short")
+                ly    = dr.get("dgr_long_years",  5)
+                sy    = dr.get("dgr_short_years", 2)
                 div_records.append({
                     "티커":                           t,
                     "배당등급":                       dr.get("grade", "—"),
@@ -368,7 +377,7 @@ elif page == "📋 보유 종목":
                     f"배당성장률({ly}년·연평균)":     f"{dgr_l:.0f}%" if dgr_l is not None else "N/A",
                     f"배당성장률({sy}년·연평균)":     f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
                     "연속 배당 증가":                  f"{consec}년 {king}".strip(),
-                    "FCF 배당성향":                   f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
+                    "배당성향":                       _fmt_payout(dr),
                     "주가수익(1Y)": f"{dr['price_growth_1y']:+.1f}%" if dr.get("price_growth_1y") is not None else "N/A",
                     "주가수익(2Y)": f"{dr['price_growth_2y']:+.1f}%" if dr.get("price_growth_2y") is not None else "N/A",
                     "주가수익(3Y)": f"{dr['price_growth_3y']:+.1f}%" if dr.get("price_growth_3y") is not None else "N/A",
@@ -675,9 +684,8 @@ elif page == "💰 배당 분석":
                 elif consec >= 25: king = "🏆귀족"
                 elif consec >= 10: king = "⭐챔피언"
                 else:              king = ""
-                dgr_l   = r.get("dgr_long")
-                dgr_s   = r.get("dgr_short")
-                fcf_pay = r.get("fcf_payout")
+                dgr_l  = r.get("dgr_long")
+                dgr_s  = r.get("dgr_short")
                 pat_sc = r.get("pattern_score")
                 records.append({
                     "티커":                            r["ticker"],
@@ -689,7 +697,7 @@ elif page == "💰 배당 분석":
                     f"배당성장률({sy}년·연평균)":      f"{dgr_s:.0f}%" if dgr_s is not None else "N/A",
                     "연속 배당 증가":                   f"{consec}년 {king}".strip(),
                     "배당률(최근1년)":                  f"{r.get('yield_ttm', 0):.1f}%",
-                    "FCF 배당성향":                    f"{fcf_pay*100:.0f}%" if fcf_pay is not None else "N/A",
+                    "배당성향":                        _fmt_payout(r),
                     "주가수익(1Y)":  f"{r['price_growth_1y']:+.1f}%" if r.get("price_growth_1y") is not None else "N/A",
                     "주가수익(2Y)":  f"{r['price_growth_2y']:+.1f}%" if r.get("price_growth_2y") is not None else "N/A",
                     "주가수익(3Y)":  f"{r['price_growth_3y']:+.1f}%" if r.get("price_growth_3y") is not None else "N/A",
