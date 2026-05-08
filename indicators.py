@@ -88,14 +88,26 @@ def extract_signals(df: pd.DataFrame) -> dict | None:
     high_252 = close.rolling(LOOKBACK).max()
     low_252  = close.rolling(LOOKBACK).min()
 
+    # OBV slope (20일 기울기, 평균 거래량으로 정규화)
+    obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+    obv_slope = 0.0
+    try:
+        obv_20   = obv.iloc[-20:].values.astype(float)
+        avg_vol  = float(volume.tail(20).mean())
+        if avg_vol > 0:
+            slope    = np.polyfit(np.arange(20), obv_20, 1)[0]
+            obv_slope = round(float(slope) / avg_vol, 4)
+    except Exception:
+        pass
+
     return {
         "close":         _val(close),
         "prev_close":    _val(close,    -2),
         "volume":        _val(volume),
         "vol_avg":       _val(vol_avg),
-        "ma_s":          _val(ma_s),           # 단기 MA
-        "ma_m":          _val(ma_m),           # 중기 MA
-        "ma_l":          _val(ma_l),           # 장기 MA
+        "ma_s":          _val(ma_s),
+        "ma_m":          _val(ma_m),
+        "ma_l":          _val(ma_l),
         "ma_s_prev":     _val(ma_s,     -2),
         "ma_m_prev":     _val(ma_m,     -2),
         "ma_l_prev":     _val(ma_l,     -2),
@@ -107,4 +119,5 @@ def extract_signals(df: pd.DataFrame) -> dict | None:
         "high_252":      _val(high_252),
         "low_252":       _val(low_252),
         "vp_zones":      calc_volume_profile(df),
+        "obv_slope":     obv_slope,
     }

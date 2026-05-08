@@ -32,13 +32,22 @@ def main():
     etf_set     = set(etf_tickers)
     print(f"  완료: 주식 {len(all_tickers)}개 / S&P 500 {len(sp500_tickers)}개 / ETF {len(etf_tickers)}개\n")
 
+    # ── 보유 종목 로딩 (유니버스에 추가) ─────────────────────────────
+    holdings_tickers: set[str] = set()
+    if os.path.exists("holdings.json"):
+        with open("holdings.json", encoding="utf-8") as f:
+            holdings_tickers = {h["ticker"] for h in json.load(f)}
+        if holdings_tickers:
+            print(f"  보유 종목 {len(holdings_tickers)}개 유니버스에 포함\n")
+
     # ── 2. 청크별 스트리밍 다운로드 + 기술적 점수화 ─────────────────
-    download_tickers = sorted(set(all_tickers) | etf_set)
+    download_tickers = sorted(set(all_tickers) | etf_set | holdings_tickers)
     total_chunks = (len(download_tickers) + CHUNK_SIZE - 1) // CHUNK_SIZE
     print(f"▶ 1년치 데이터 다운로드 + 점수화 (총 {total_chunks}청크, 청크당 {CHUNK_SIZE}개)...")
 
     results: list[dict]     = []
     etf_results: list[dict] = []
+    holdings_raw: dict      = {}   # 품질필터 우회용 (보유 종목 원데이터)
     passed = removed = 0
 
     for i in range(0, len(download_tickers), CHUNK_SIZE):
@@ -47,6 +56,11 @@ def main():
         print(f"  [{chunk_no}/{total_chunks}] {len(chunk)}개 처리 중...")
 
         raw_chunk = fetch_batch(chunk, period="1y", chunk_size=CHUNK_SIZE)
+
+        # 보유 종목 원데이터 수집 (품질필터 이전)
+        for t, df in raw_chunk.items():
+            if t in holdings_tickers and t not in etf_set:
+                holdings_raw[t] = df
 
         etf_raw   = {t: df for t, df in raw_chunk.items() if t in etf_set}
         stock_raw = {t: df for t, df in raw_chunk.items() if t not in etf_set}
@@ -119,17 +133,43 @@ def main():
     del fund_map
     print("  완료\n")
 
-    # ── 6. 밸류에이션 반영 후 재정렬 + 최종 트리밍 ─────────────────
+    # ── 6. 보유 종목 분析 (품질필터 우회, PER/PBR 포함) ──────────────
+    holdings_scores: list[dict] = []
+    if holdings_raw:
+        print(f"▶ 보유 종목 분析 ({len(holdings_raw)}개)...")
+        h_scored_list = score_all(holdings_raw, "STOCK")
+        h_scored      = {r["ticker"]: r for r in h_scored_list}
+        del holdings_raw
+
+        if h_scored:
+            h_fund = fetch_fundamentals(list(h_scored.keys()))
+            for t, r in h_scored.items():
+                fd              = h_fund.get(t, {})
+                r["per"]        = fd.get("per")
+                r["pbr"]        = fd.get("pbr")
+                r["fund_score"] = score_fundamentals(r["per"], r["pbr"])
+                new_total       = max(-15.0, min(15.0, r["score"] + r["fund_score"]))
+                r["score"]      = round(new_total, 1)
+                r["grade"]      = grade_from_score(new_total)
+            holdings_scores = sorted(h_scored.values(), key=lambda r: r["score"], reverse=True)
+            del h_fund, h_scored
+        gc.collect()
+        print(f"  완료: {len(holdings_scores)}개\n")
+    else:
+        del holdings_raw
+
+    # ── 7. 밸류에이션 반영 후 재정렬 + 최종 트리밍 ─────────────────
     os.makedirs(CACHE_DIR, exist_ok=True)
     cache_payload = {
-        "date":       date_str,
-        "total":      total_scored,
-        "sp500_buy":  sorted([r for r in candidates["sp500_buy"]  if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:25],
-        "sp500_sell": sorted([r for r in candidates["sp500_sell"] if r["score"] < -3],  key=lambda r: r["score"])[:25],
-        "etf_buy":    sorted([r for r in candidates["etf_buy"]    if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:10],
-        "etf_sell":   sorted([r for r in candidates["etf_sell"]   if r["score"] < -3],  key=lambda r: r["score"])[:10],
-        "outer_buy":  sorted([r for r in candidates["outer_buy"]  if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:15],
-        "outer_sell": sorted([r for r in candidates["outer_sell"] if r["score"] < -3],  key=lambda r: r["score"])[:15],
+        "date":            date_str,
+        "total":           total_scored,
+        "sp500_buy":       sorted([r for r in candidates["sp500_buy"]  if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:25],
+        "sp500_sell":      sorted([r for r in candidates["sp500_sell"] if r["score"] < -3],  key=lambda r: r["score"])[:25],
+        "etf_buy":         sorted([r for r in candidates["etf_buy"]    if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:10],
+        "etf_sell":        sorted([r for r in candidates["etf_sell"]   if r["score"] < -3],  key=lambda r: r["score"])[:10],
+        "outer_buy":       sorted([r for r in candidates["outer_buy"]  if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:15],
+        "outer_sell":      sorted([r for r in candidates["outer_sell"] if r["score"] < -3],  key=lambda r: r["score"])[:15],
+        "holdings_scores": holdings_scores,
     }
     del candidates
     gc.collect()

@@ -265,11 +265,21 @@ elif page == "📋 보유 종목":
     st.title("📋 보유 종목 관리")
     holdings = load_holdings()
 
-    # ── 점수: 항상 실시간 조회 (1시간 캐시) ─────────────────────────────
+    # ── 점수: last_results.json 캐시 우선, 없으면 실시간 조회 ──────────
     scores: dict = {}
-    if holdings:
+    _holding_tickers = tuple(h["ticker"] for h in holdings)
+    _lr = _read_cache(LAST_RESULTS)
+    _hs_cache = {r["ticker"]: r for r in (_lr.get("holdings_scores", []) if _lr else [])}
+    if holdings and all(t in _hs_cache for t in _holding_tickers):
+        scores = _hs_cache
+        st.caption(f"분析 기준일: **{_lr.get('date', '—')}** — 매일 자동 업데이트")
+    elif holdings:
         with st.spinner("보유 종목 최신 점수 조회 중..."):
-            scores = _fetch_holding_scores(tuple(h["ticker"] for h in holdings))
+            scores = _fetch_holding_scores(_holding_tickers)
+        if _hs_cache:
+            # 캐시에는 있지만 새 종목이 추가된 경우 — 캐시 값으로 보완
+            for t, r in _hs_cache.items():
+                scores.setdefault(t, r)
 
     # ── 배당 데이터: holdings_analysis.json → last_dividend.json 순으로 시도 ──
     div_map: dict = {}

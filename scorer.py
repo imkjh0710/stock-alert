@@ -267,6 +267,15 @@ def score_ticker(s: dict, df=None) -> tuple[float, str, float, float, str, list[
     if h252 is not None and c >= h252: long_score += 3.0
     if l252 is not None and c <= l252: long_score -= 3.0
 
+    # ── 장타: OBV 추세 (매집/분산) ───────────────────────────────────
+    # OBV slope > 0.05 AND 가격이 60MA 위 → 매집 확인 (+1)
+    # OBV slope < -0.05 AND 가격이 60MA 아래 → 분산 확인 (-1)
+    obv_slope = s.get("obv_slope") or 0.0
+    if obv_slope > 0.05 and ma_m is not None and c > ma_m:
+        long_score += 1.0
+    elif obv_slope < -0.05 and ma_m is not None and c < ma_m:
+        long_score -= 1.0
+
     # ── 단타: 20MA 상태 + 돌파 ───────────────────────────────────────
     ma_s = s["ma_s"]; ma_s_p = s["ma_s_prev"]
     if ma_s is not None:
