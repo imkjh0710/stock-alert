@@ -109,8 +109,8 @@ def main():
     candidates = {
         "sp500_buy":  sorted([r for r in sp500_results if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:50],
         "sp500_sell": sorted([r for r in sp500_results if r["score"] < -3],  key=lambda r: r["score"])[:50],
-        "etf_buy":    sorted([r for r in etf_results   if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:20],
-        "etf_sell":   sorted([r for r in etf_results   if r["score"] < -3],  key=lambda r: r["score"])[:20],
+        "etf_buy":    sorted([r for r in etf_results   if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:50],
+        "etf_sell":   sorted([r for r in etf_results   if r["score"] < -3],  key=lambda r: r["score"])[:50],
         "outer_buy":  sorted([r for r in outer_results if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:30],
         "outer_sell": sorted([r for r in outer_results if r["score"] < -3],  key=lambda r: r["score"])[:30],
     }
@@ -165,8 +165,8 @@ def main():
         "total":           total_scored,
         "sp500_buy":       sorted([r for r in candidates["sp500_buy"]  if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:25],
         "sp500_sell":      sorted([r for r in candidates["sp500_sell"] if r["score"] < -3],  key=lambda r: r["score"])[:25],
-        "etf_buy":         sorted([r for r in candidates["etf_buy"]    if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:10],
-        "etf_sell":        sorted([r for r in candidates["etf_sell"]   if r["score"] < -3],  key=lambda r: r["score"])[:10],
+        "etf_buy":         sorted([r for r in candidates["etf_buy"]    if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:25],
+        "etf_sell":        sorted([r for r in candidates["etf_sell"]   if r["score"] < -3],  key=lambda r: r["score"])[:25],
         "outer_buy":       sorted([r for r in candidates["outer_buy"]  if r["score"] >= 4],  key=lambda r: r["score"], reverse=True)[:15],
         "outer_sell":      sorted([r for r in candidates["outer_sell"] if r["score"] < -3],  key=lambda r: r["score"])[:15],
         "holdings_scores": holdings_scores,

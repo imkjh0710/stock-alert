@@ -563,7 +563,7 @@ elif page == "🚀 분석 실행":
             )
             d1, d2, d3, d4, d5, d6 = st.tabs(
                 ["🏆 S&P 500 매수 TOP 25", "🔻 S&P 500 매도 TOP 25",
-                 "📊 ETF 매수 TOP 10",     "🔻 ETF 매도 TOP 10",
+                 "📊 ETF 매수 TOP 25",     "🔻 ETF 매도 TOP 25",
                  "💎 외곽 매수 TOP 15",    "🔻 외곽 매도 TOP 15"]
             )
             for tab, key in zip(
