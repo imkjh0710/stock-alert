@@ -23,60 +23,6 @@ LAST_RESULTS        = BASE_DIR / "cache" / "last_results.json"
 LAST_DIVIDEND       = BASE_DIR / "cache" / "last_dividend.json"
 HOLDINGS_ANALYSIS   = BASE_DIR / "cache" / "holdings_analysis.json"
 
-# ── 코인 유니버스 (시가총액 상위, yfinance 티커 기준) ─────────────────
-COIN_UNIVERSE: list[tuple[str, str]] = [
-    ("BTC-USD",  "Bitcoin"),
-    ("ETH-USD",  "Ethereum"),
-    ("BNB-USD",  "BNB"),
-    ("SOL-USD",  "Solana"),
-    ("XRP-USD",  "XRP"),
-    ("DOGE-USD", "Dogecoin"),
-    ("ADA-USD",  "Cardano"),
-    ("AVAX-USD", "Avalanche"),
-    ("TRX-USD",  "TRON"),
-    ("LINK-USD", "Chainlink"),
-    ("DOT-USD",  "Polkadot"),
-    ("MATIC-USD","Polygon"),
-    ("LTC-USD",  "Litecoin"),
-    ("BCH-USD",  "Bitcoin Cash"),
-    ("NEAR-USD", "NEAR Protocol"),
-    ("UNI-USD",  "Uniswap"),
-    ("ATOM-USD", "Cosmos"),
-    ("XLM-USD",  "Stellar"),
-    ("ICP-USD",  "Internet Computer"),
-    ("APT-USD",  "Aptos"),
-    ("ARB-USD",  "Arbitrum"),
-    ("OP-USD",   "Optimism"),
-    ("FIL-USD",  "Filecoin"),
-    ("ALGO-USD", "Algorand"),
-    ("HBAR-USD", "Hedera"),
-]
-_COIN_NAME = {t: n for t, n in COIN_UNIVERSE}
-_COIN_TICKERS = tuple(t for t, _ in COIN_UNIVERSE)
-
-# ── 스테이킹 수익률 참고 데이터 (근사치, 2025년 기준) ────────────────
-_STAKING_INFO: dict[str, dict] = {
-    "BTC-USD":   {"apy": None, "type": "PoW",    "note": "채굴 방식 — 스테이킹 없음"},
-    "ETH-USD":   {"apy": 3.5,  "type": "PoS",    "note": "Lido / Beacon Chain 기준"},
-    "SOL-USD":   {"apy": 6.5,  "type": "PoS",    "note": "Marinade / 네이티브 기준"},
-    "BNB-USD":   {"apy": 2.5,  "type": "PoS",    "note": "BNB Chain 기준"},
-    "XRP-USD":   {"apy": None, "type": "RPCA",   "note": "스테이킹 미지원"},
-    "ADA-USD":   {"apy": 3.5,  "type": "PoS",    "note": "Cardano 네이티브 기준"},
-    "AVAX-USD":  {"apy": 8.0,  "type": "PoS",    "note": "네이티브 스테이킹 기준"},
-    "DOT-USD":   {"apy": 14.0, "type": "NPoS",   "note": "노미네이션 기준 (변동 큼)"},
-    "LINK-USD":  {"apy": 4.5,  "type": "ERC-20", "note": "Chainlink Staking v0.2"},
-    "DOGE-USD":  {"apy": None, "type": "PoW",    "note": "채굴 방식 — 스테이킹 없음"},
-    "MATIC-USD": {"apy": 5.0,  "type": "PoS",    "note": "Polygon 스테이킹 기준"},
-    "POL-USD":   {"apy": 5.0,  "type": "PoS",    "note": "Polygon (POL) 기준"},
-    "ATOM-USD":  {"apy": 17.0, "type": "PoS",    "note": "Cosmos Hub 기준 (변동 큼)"},
-    "NEAR-USD":  {"apy": 9.0,  "type": "PoS",    "note": "NEAR Protocol 기준"},
-    "TRX-USD":   {"apy": 4.5,  "type": "DPoS",   "note": "TRON 스테이킹 기준"},
-    "UNI-USD":   {"apy": None, "type": "거버넌스","note": "수익 분배 없음"},
-    "LTC-USD":   {"apy": None, "type": "PoW",    "note": "채굴 방식 — 스테이킹 없음"},
-    "BCH-USD":   {"apy": None, "type": "PoW",    "note": "채굴 방식 — 스테이킹 없음"},
-    "ALGO-USD":  {"apy": 5.5,  "type": "PPoS",   "note": "Algorand 거버넌스 기준"},
-    "XLM-USD":   {"apy": None, "type": "SCP",    "note": "스테이킹 미지원"},
-}
 
 # ── 기본 설정값 ───────────────────────────────────────────────────────
 DEFAULT_SETTINGS = {
@@ -270,24 +216,7 @@ def _fetch_holding_trend(tickers: tuple) -> dict:
     return result
 
 
-@st.cache_data(ttl=3600)
-def _fetch_coin_scores(tickers: tuple) -> dict:
-    """코인 기술적 점수 — 티커별 개별 다운로드 (fetch_batch 미사용)."""
-    try:
-        from scorer import score_all
-        raw = {}
-        for t in tickers:
-            try:
-                df = yf.Ticker(t).history(period="1y", auto_adjust=True)
-                if not df.empty and len(df) >= 30:
-                    raw[t] = df
-            except Exception:
-                pass
-        if not raw:
-            return {}
-        return {r["ticker"]: r for r in score_all(raw, "ETF")}
-    except Exception:
-        return {}
+
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -876,99 +805,7 @@ elif page == "💰 배당 분석":
                 _div_table(held, "div_held")
             else:
                 st.info("보유 종목 배당 데이터가 없습니다. 보유 종목을 등록하거나 배당 분석을 실행해주세요.")# ══════════════════════════════════════════════════════════════════════
-# 5. 코인 분析
-# ══════════════════════════════════════════════════════════════════════
-elif page == "🪙 코인 분析":
-    st.title("🪙 코인 분析")
-    st.caption(f"시가총액 상위 {len(COIN_UNIVERSE)}개 코인 — 실시간 기술적 신호")
-
-    with st.spinner("코인 데이터 조회 중... (1시간 캐시)"):
-        coin_scores = _fetch_coin_scores(_COIN_TICKERS)
-
-    # ── 점수 테이블 구성 ────────────────────────────────────────────────
-    def _coin_row(ticker, sc):
-        pat_sc = sc.get("pattern_score") if sc else None
-        return {
-            "티커":     ticker,
-            "이름":     _COIN_NAME.get(ticker, ticker),
-            "등급":     sc["grade"]                        if sc else "—",
-            "합산":     f"{sc['score']:+.1f}"              if sc else "—",
-            "장타":     f"{sc.get('long_score',  0):+.0f}" if sc else "—",
-            "단타":     f"{sc.get('short_score', 0):+.0f}" if sc else "—",
-            "패턴점수": f"{pat_sc:+.1f}"   if pat_sc is not None else "—",
-            "종가($)":  sc["close"]         if sc else "—",
-            "등락률":   f"{sc['change_pct']:+.1f}%" if sc else "—",
-            "_score":   sc["score"]         if sc else 0,
-        }
-
-    all_rows = sorted(
-        [_coin_row(t, coin_scores.get(t)) for t in _COIN_TICKERS],
-        key=lambda r: r["_score"], reverse=True,
-    )
-    buy_rows  = [r for r in all_rows if isinstance(r["_score"], (int, float)) and r["_score"] >= 4]
-    sell_rows = sorted(
-        [r for r in all_rows if isinstance(r["_score"], (int, float)) and r["_score"] < -3],
-        key=lambda r: r["_score"],
-    )
-    display_cols = ["티커", "이름", "등급", "합산", "장타", "단타", "패턴점수", "종가($)", "등락률"]
-
-    tab_buy, tab_sell, tab_all, tab_stake = st.tabs(
-        ["📈 매수 신호", "📉 매도 신호", "📊 전체", "💰 스테이킹"]
-    )
-
-    with tab_buy:
-        if buy_rows:
-            st.dataframe(pd.DataFrame(buy_rows)[display_cols],
-                         use_container_width=True, hide_index=True)
-        else:
-            st.info("현재 매수 신호(합산 ≥ +4) 코인 없음 — 관망 구간")
-
-    with tab_sell:
-        if sell_rows:
-            st.dataframe(pd.DataFrame(sell_rows)[display_cols],
-                         use_container_width=True, hide_index=True)
-        else:
-            st.info("현재 매도 신호(합산 ≤ −3) 코인 없음 — 관망 구간")
-
-    with tab_all:
-        st.dataframe(pd.DataFrame(all_rows)[display_cols],
-                     use_container_width=True, hide_index=True)
-
-    with tab_stake:
-        st.caption("※ 근사치 (2025년 기준). 실제 수익률은 플랫폼·시장 상황에 따라 다릅니다.")
-        staking_records = []
-        for ticker, name in COIN_UNIVERSE:
-            info = _STAKING_INFO.get(ticker, {})
-            apy  = info.get("apy")
-            staking_records.append({
-                "티커":    ticker,
-                "이름":    name,
-                "예상APY": f"{apy:.1f}%" if apy is not None else "—",
-                "합의방식": info.get("type", "—"),
-                "비고":    info.get("note", "정보 없음"),
-            })
-        st.dataframe(pd.DataFrame(staking_records), use_container_width=True, hide_index=True)
-
-    # ── 1주 트렌드 ────────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("#### 📈 최근 1주 지표 트렌드")
-    trend_sel = st.selectbox(
-        "코인 선택",
-        options=list(_COIN_TICKERS),
-        format_func=lambda t: f"{t}  ({_COIN_NAME.get(t, t)})",
-        key="coin_trend_sel",
-    )
-    if trend_sel:
-        with st.spinner(f"{trend_sel} 트렌드 조회 중..."):
-            coin_trend = _fetch_holding_trend(_COIN_TICKERS)
-        trend_rows = coin_trend.get(trend_sel)
-        if trend_rows:
-            st.dataframe(pd.DataFrame(trend_rows), use_container_width=True, hide_index=True)
-        else:
-            st.caption("트렌드 데이터를 가져오지 못했습니다.")
-
-# ══════════════════════════════════════════════════════════════════════
-# 6. 리포트 기록
+# 5. 리포트 기록
 # ══════════════════════════════════════════════════════════════════════
 elif page == "📁 리포트 기록":
     st.title("📁 리포트 기록")
