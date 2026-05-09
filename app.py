@@ -272,11 +272,19 @@ def _fetch_holding_trend(tickers: tuple) -> dict:
 
 @st.cache_data(ttl=3600)
 def _fetch_coin_scores(tickers: tuple) -> dict:
-    """코인 기술적 점수 — PER/PBR 미적용, ETF 모드 스코어링."""
+    """코인 기술적 점수 — 티커별 개별 다운로드 (fetch_batch 미사용)."""
     try:
-        from fetcher import fetch_batch
         from scorer import score_all
-        raw = fetch_batch(list(tickers), period="1y", chunk_size=max(len(tickers), 1))
+        raw = {}
+        for t in tickers:
+            try:
+                df = yf.Ticker(t).history(period="1y", auto_adjust=True)
+                if not df.empty and len(df) >= 30:
+                    raw[t] = df
+            except Exception:
+                pass
+        if not raw:
+            return {}
         return {r["ticker"]: r for r in score_all(raw, "ETF")}
     except Exception:
         return {}
