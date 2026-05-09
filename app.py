@@ -162,6 +162,58 @@ def _fetch_holding_scores(tickers: tuple) -> dict:
         return {}
 
 
+@st.cache_data(ttl=3600)
+def _fetch_holding_trend(tickers: tuple) -> dict:
+    """보유 종목 최근 5영업일 지표 트렌드 (1개월 데이터 기반)."""
+    result: dict = {}
+    for t in tickers:
+        try:
+            df = yf.Ticker(t).history(period="1mo", auto_adjust=True)
+            if df is None or len(df) < 6:
+                continue
+            close   = df["Close"].squeeze()
+            volume  = df["Volume"].squeeze()
+
+            # RSI(14)
+            delta  = close.diff()
+            gain   = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
+            loss   = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
+            rsi_s  = 100 - (100 / (1 + gain / loss.replace(0, float("nan"))))
+
+            # MACD (12/26/9)
+            macd_line = (close.ewm(span=12, adjust=False).mean()
+                         - close.ewm(span=26, adjust=False).mean())
+            macd_sig  = macd_line.ewm(span=9, adjust=False).mean()
+
+            # 거래량 20일 평균 대비 비율
+            vol_avg = volume.rolling(20, min_periods=1).mean()
+
+            rows = []
+            for idx in df.tail(5).index:
+                loc  = df.index.get_loc(idx)
+                c    = float(close.iloc[loc])
+                prev = float(close.iloc[loc - 1]) if loc > 0 else c
+                chg  = (c - prev) / prev * 100 if prev else 0.0
+                rsi_v = rsi_s.iloc[loc]
+                v  = float(volume.iloc[loc])
+                va = float(vol_avg.iloc[loc])
+                vr = round(v / va, 1) if va > 0 else None
+                m  = float(macd_line.iloc[loc])
+                ms = float(macd_sig.iloc[loc])
+                rows.append({
+                    "날짜":       str(idx.date()),
+                    "종가($)":    round(c, 2),
+                    "등락%":      f"{chg:+.1f}%",
+                    "RSI":        round(float(rsi_v), 1) if pd.notna(rsi_v) else "—",
+                    "거래량비율": f"{vr}x" if vr is not None else "—",
+                    "MACD":       "▲상승" if m > ms else "▼하락",
+                })
+            result[t] = rows
+        except Exception:
+            pass
+    return result
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 앱 전역 설정
 # ══════════════════════════════════════════════════════════════════════
@@ -338,6 +390,24 @@ elif page == "📋 보유 종목":
             holdings.pop(delete_idx)
             save_holdings(holdings)
             st.rerun()
+
+        # 최근 1주 지표 트렌드
+        st.markdown("---")
+        st.markdown("#### 📈 최근 1주 지표 트렌드")
+        trend_ticker = st.selectbox(
+            "종목 선택",
+            options=[h["ticker"] for h in holdings],
+            format_func=lambda t: f"{t}  ({next((h.get('name', t) for h in holdings if h['ticker'] == t), t)})",
+            key="trend_sel",
+        )
+        if trend_ticker:
+            with st.spinner(f"{trend_ticker} 트렌드 조회 중..."):
+                trend_data = _fetch_holding_trend(_holding_tickers)
+            rows = trend_data.get(trend_ticker)
+            if rows:
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            else:
+                st.caption("트렌드 데이터를 가져오지 못했습니다.")
 
         # 배당 현황 테이블
         st.markdown("---")
