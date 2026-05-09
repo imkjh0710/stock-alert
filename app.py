@@ -18,11 +18,41 @@ sys.path.insert(0, str(BASE_DIR))
 
 SETTINGS_FILE       = BASE_DIR / "settings.json"
 HOLDINGS_FILE       = BASE_DIR / "holdings.json"
-COINS_FILE          = BASE_DIR / "coins.json"
 LOGS_DIR            = BASE_DIR / "logs"
 LAST_RESULTS        = BASE_DIR / "cache" / "last_results.json"
 LAST_DIVIDEND       = BASE_DIR / "cache" / "last_dividend.json"
 HOLDINGS_ANALYSIS   = BASE_DIR / "cache" / "holdings_analysis.json"
+
+# ── 코인 유니버스 (시가총액 상위, yfinance 티커 기준) ─────────────────
+COIN_UNIVERSE: list[tuple[str, str]] = [
+    ("BTC-USD",  "Bitcoin"),
+    ("ETH-USD",  "Ethereum"),
+    ("BNB-USD",  "BNB"),
+    ("SOL-USD",  "Solana"),
+    ("XRP-USD",  "XRP"),
+    ("DOGE-USD", "Dogecoin"),
+    ("ADA-USD",  "Cardano"),
+    ("AVAX-USD", "Avalanche"),
+    ("TRX-USD",  "TRON"),
+    ("LINK-USD", "Chainlink"),
+    ("DOT-USD",  "Polkadot"),
+    ("MATIC-USD","Polygon"),
+    ("LTC-USD",  "Litecoin"),
+    ("BCH-USD",  "Bitcoin Cash"),
+    ("NEAR-USD", "NEAR Protocol"),
+    ("UNI-USD",  "Uniswap"),
+    ("ATOM-USD", "Cosmos"),
+    ("XLM-USD",  "Stellar"),
+    ("ICP-USD",  "Internet Computer"),
+    ("APT-USD",  "Aptos"),
+    ("ARB-USD",  "Arbitrum"),
+    ("OP-USD",   "Optimism"),
+    ("FIL-USD",  "Filecoin"),
+    ("ALGO-USD", "Algorand"),
+    ("HBAR-USD", "Hedera"),
+]
+_COIN_NAME = {t: n for t, n in COIN_UNIVERSE}
+_COIN_TICKERS = tuple(t for t, _ in COIN_UNIVERSE)
 
 # ── 스테이킹 수익률 참고 데이터 (근사치, 2025년 기준) ────────────────
 _STAKING_INFO: dict[str, dict] = {
@@ -140,17 +170,6 @@ def save_holdings(h: list):
         f.write(content)
     _gh_push("holdings.json", content, "chore: update holdings [skip ci]")
 
-def load_coins() -> list:
-    if COINS_FILE.exists():
-        with open(COINS_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return []
-
-def save_coins(c: list):
-    content = json.dumps(c, indent=2, ensure_ascii=False)
-    with open(COINS_FILE, "w", encoding="utf-8") as f:
-        f.write(content)
-    _gh_push("coins.json", content, "chore: update coins [skip ci]")
 
 
 # ── 캐시 함수 (메모리 최적화) ─────────────────────────────────────────
@@ -848,136 +867,97 @@ elif page == "💰 배당 분석":
             if held:
                 _div_table(held, "div_held")
             else:
-                st.info("보유 종목 배당 데이터가 없습니다. 보유 종목을 등록하거나 배당 분석을 실행해주세요.")
-
-
-# ══════════════════════════════════════════════════════════════════════
+                st.info("보유 종목 배당 데이터가 없습니다. 보유 종목을 등록하거나 배당 분석을 실행해주세요.")# ══════════════════════════════════════════════════════════════════════
 # 5. 코인 분析
 # ══════════════════════════════════════════════════════════════════════
-elif page == "🪙 코인 분석":
-    st.title("🪙 코인 분석")
-    coins = load_coins()
-    coin_tickers = tuple(c["ticker"] for c in coins)
+elif page == "🪙 코인 분析":
+    st.title("🪙 코인 분析")
+    st.caption(f"시가총액 상위 {len(COIN_UNIVERSE)}개 코인 — 실시간 기술적 신호")
 
-    # ── 기술적 점수 ────────────────────────────────────────────────────
-    if coins:
-        st.markdown("#### 📊 기술적 신호")
-        with st.spinner("코인 데이터 조회 중..."):
-            coin_scores = _fetch_coin_scores(coin_tickers)
+    with st.spinner("코인 데이터 조회 중... (1시간 캐시)"):
+        coin_scores = _fetch_coin_scores(_COIN_TICKERS)
 
-        if coin_scores:
-            score_records = []
-            for c in coins:
-                sc = coin_scores.get(c["ticker"])
-                pat_sc = sc.get("pattern_score") if sc else None
-                score_records.append({
-                    "티커":     c["ticker"],
-                    "이름":     c.get("name", c["ticker"]),
-                    "등급":     sc["grade"]                            if sc else "—",
-                    "합산":     f"{sc['score']:+.1f}"                  if sc else "—",
-                    "장타":     f"{sc.get('long_score',  0):+.0f}"     if sc else "—",
-                    "단타":     f"{sc.get('short_score', 0):+.0f}"     if sc else "—",
-                    "패턴점수": f"{pat_sc:+.1f}"                       if pat_sc is not None else "—",
-                    "종가($)":  sc["close"]                            if sc else "—",
-                    "등락률":   f"{sc['change_pct']:+.1f}%"            if sc else "—",
-                })
-            st.dataframe(pd.DataFrame(score_records), use_container_width=True, hide_index=True)
+    # ── 점수 테이블 구성 ────────────────────────────────────────────────
+    def _coin_row(ticker, sc):
+        pat_sc = sc.get("pattern_score") if sc else None
+        return {
+            "티커":     ticker,
+            "이름":     _COIN_NAME.get(ticker, ticker),
+            "등급":     sc["grade"]                        if sc else "—",
+            "합산":     f"{sc['score']:+.1f}"              if sc else "—",
+            "장타":     f"{sc.get('long_score',  0):+.0f}" if sc else "—",
+            "단타":     f"{sc.get('short_score', 0):+.0f}" if sc else "—",
+            "패턴점수": f"{pat_sc:+.1f}"   if pat_sc is not None else "—",
+            "종가($)":  sc["close"]         if sc else "—",
+            "등락률":   f"{sc['change_pct']:+.1f}%" if sc else "—",
+            "_score":   sc["score"]         if sc else 0,
+        }
+
+    all_rows = sorted(
+        [_coin_row(t, coin_scores.get(t)) for t in _COIN_TICKERS],
+        key=lambda r: r["_score"], reverse=True,
+    )
+    buy_rows  = [r for r in all_rows if isinstance(r["_score"], (int, float)) and r["_score"] >= 4]
+    sell_rows = sorted(
+        [r for r in all_rows if isinstance(r["_score"], (int, float)) and r["_score"] < -3],
+        key=lambda r: r["_score"],
+    )
+    display_cols = ["티커", "이름", "등급", "합산", "장타", "단타", "패턴점수", "종가($)", "등락률"]
+
+    tab_buy, tab_sell, tab_all, tab_stake = st.tabs(
+        ["📈 매수 신호", "📉 매도 신호", "📊 전체", "💰 스테이킹"]
+    )
+
+    with tab_buy:
+        if buy_rows:
+            st.dataframe(pd.DataFrame(buy_rows)[display_cols],
+                         use_container_width=True, hide_index=True)
         else:
-            st.caption("점수 조회 실패 — 잠시 후 다시 시도해주세요.")
+            st.info("현재 매수 신호(합산 ≥ +4) 코인 없음 — 관망 구간")
 
-        # ── 1주 트렌드 ────────────────────────────────────────────────
-        st.markdown("#### 📈 최근 1주 지표 트렌드")
-        trend_sel = st.selectbox(
-            "코인 선택",
-            options=[c["ticker"] for c in coins],
-            format_func=lambda t: f"{t}  ({next((c.get('name', t) for c in coins if c['ticker'] == t), t)})",
-            key="coin_trend_sel",
-        )
-        if trend_sel:
-            with st.spinner(f"{trend_sel} 트렌드 조회 중..."):
-                coin_trend = _fetch_holding_trend(coin_tickers)
-            trend_rows = coin_trend.get(trend_sel)
-            if trend_rows:
-                st.dataframe(pd.DataFrame(trend_rows), use_container_width=True, hide_index=True)
-            else:
-                st.caption("트렌드 데이터를 가져오지 못했습니다.")
-    else:
-        st.info("모니터링할 코인을 아래에서 추가해주세요.")
+    with tab_sell:
+        if sell_rows:
+            st.dataframe(pd.DataFrame(sell_rows)[display_cols],
+                         use_container_width=True, hide_index=True)
+        else:
+            st.info("현재 매도 신호(합산 ≤ −3) 코인 없음 — 관망 구간")
 
-    # ── 스테이킹 수익률 ────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("#### 💰 스테이킹 수익률")
-    st.caption("※ 근사치 (2025년 기준). 실제 수익률은 플랫폼·시장 상황에 따라 다릅니다.")
-    if coins:
+    with tab_all:
+        st.dataframe(pd.DataFrame(all_rows)[display_cols],
+                     use_container_width=True, hide_index=True)
+
+    with tab_stake:
+        st.caption("※ 근사치 (2025년 기준). 실제 수익률은 플랫폼·시장 상황에 따라 다릅니다.")
         staking_records = []
-        for c in coins:
-            info = _STAKING_INFO.get(c["ticker"], {})
+        for ticker, name in COIN_UNIVERSE:
+            info = _STAKING_INFO.get(ticker, {})
             apy  = info.get("apy")
             staking_records.append({
-                "티커":    c["ticker"],
-                "이름":    c.get("name", c["ticker"]),
+                "티커":    ticker,
+                "이름":    name,
                 "예상APY": f"{apy:.1f}%" if apy is not None else "—",
                 "합의방식": info.get("type", "—"),
                 "비고":    info.get("note", "정보 없음"),
             })
         st.dataframe(pd.DataFrame(staking_records), use_container_width=True, hide_index=True)
-    else:
-        st.caption("코인을 추가하면 스테이킹 수익률 정보가 표시됩니다.")
 
-    # ── 코인 관리 ─────────────────────────────────────────────────────
+    # ── 1주 트렌드 ────────────────────────────────────────────────────
     st.markdown("---")
-    st.markdown("#### ➕ 코인 추가")
-    st.caption("티커는 yfinance 형식으로 입력 — BTC, ETH 등 심볼만 입력해도 자동 변환됩니다.")
-    ca1, ca2 = st.columns([4, 1])
-    coin_in = ca1.text_input("티커 입력 (예: BTC, ETH-USD, SOL)", key="add_coin").strip().upper()
-
-    if ca2.button("추가", type="primary", use_container_width=True, key="add_coin_btn"):
-        if not coin_in:
-            st.warning("티커를 입력해주세요.")
+    st.markdown("#### 📈 최근 1주 지표 트렌드")
+    trend_sel = st.selectbox(
+        "코인 선택",
+        options=list(_COIN_TICKERS),
+        format_func=lambda t: f"{t}  ({_COIN_NAME.get(t, t)})",
+        key="coin_trend_sel",
+    )
+    if trend_sel:
+        with st.spinner(f"{trend_sel} 트렌드 조회 중..."):
+            coin_trend = _fetch_holding_trend(_COIN_TICKERS)
+        trend_rows = coin_trend.get(trend_sel)
+        if trend_rows:
+            st.dataframe(pd.DataFrame(trend_rows), use_container_width=True, hide_index=True)
         else:
-            # -USD 자동 보완
-            ticker_full = coin_in if "-" in coin_in else f"{coin_in}-USD"
-            if any(c["ticker"] == ticker_full for c in coins):
-                st.warning(f"**{ticker_full}** 은(는) 이미 등록되어 있습니다.")
-            else:
-                with st.spinner(f"{ticker_full} 확인 중..."):
-                    try:
-                        _h = yf.Ticker(ticker_full).history(period="5d")
-                        if _h.empty:
-                            st.error(f"❌ **{ticker_full}**: 데이터를 찾을 수 없습니다.")
-                        else:
-                            # 이름 조회 시도
-                            name = ticker_full
-                            try:
-                                _info = yf.Ticker(ticker_full).info
-                                name  = (_info.get("longName")
-                                         or _info.get("shortName")
-                                         or ticker_full)
-                            except Exception:
-                                pass
-                            coins.append({"ticker": ticker_full, "name": name})
-                            save_coins(coins)
-                            st.success(f"✅ **{ticker_full}** ({name}) 추가됨")
-                            st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ 조회 실패: {e}")
-
-    # ── 코인 목록 + 삭제 ──────────────────────────────────────────────
-    if coins:
-        st.markdown("---")
-        st.markdown(f"**모니터링 중 {len(coins)}개**")
-        del_coin_idx = None
-        for i, c in enumerate(coins):
-            cc1, cc2, cc3 = st.columns([3, 6, 1])
-            cc1.write(c["ticker"])
-            cc2.write(c.get("name", "—"))
-            if cc3.button("🗑️", key=f"del_coin_{i}"):
-                del_coin_idx = i
-        if del_coin_idx is not None:
-            coins.pop(del_coin_idx)
-            save_coins(coins)
-            st.rerun()
-
+            st.caption("트렌드 데이터를 가져오지 못했습니다.")
 
 # ══════════════════════════════════════════════════════════════════════
 # 6. 리포트 기록
