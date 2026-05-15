@@ -18,7 +18,10 @@ _MAX_LEN = 4096
 _DISCLAIMER = (
     "\n⚠️ 위 예상 범위는 변동성(ATR)과 매물대 기반 기술적 분석 결과일 뿐, "
     "실제 주가 움직임을 보장하지 않습니다. "
-    "펀더멘털, 매크로 환경, 종목별 이슈를 종합 검토하세요."
+    "펀더멘털, 매크로 환경, 종목별 이슈를 종합 검토하세요.\n"
+    "⚠️ 펀더멘털 데이터는 분기별 실적 보고 기반이며 yfinance에서 제공받습니다. "
+    "일부 종목(ETF, 신생 상장사, 해외 종목)은 데이터가 제한적이거나 누락될 수 있습니다. "
+    "실제 투자 결정 전 회사의 IR 자료, 공시, 산업 전망을 직접 검증하세요."
 )
 
 
@@ -41,10 +44,10 @@ def send_message(text: str, retries: int = 3) -> bool:
 
 
 def _grade_icon(score: float) -> str:
-    if score >= 8:  return "🟢🟢"
-    if score >= 4:  return "🟢"
-    if score >= -3: return "⚪"
-    if score >= -7: return "🔴"
+    if score >= 18:  return "🟢🟢"
+    if score >= 8:   return "🟢"
+    if score >= -7:  return "⚪"
+    if score >= -17: return "🔴"
     return "🔴🔴"
 
 
@@ -55,28 +58,56 @@ def _p(v) -> str:
 
 
 def _row_full(rank: int, r: dict) -> str:
-    """TOP 10용 풀 디테일 행 (5줄 이내)"""
+    """TOP 10용 풀 디테일 행"""
     chg     = r["change_pct"]
     chg_str = f"+{chg:.1f}%" if chg >= 0 else f"{chg:.1f}%"
     icon    = _grade_icon(r["score"])
     ls      = r.get("long_score",  0)
     ss      = r.get("short_score", 0)
+    fs      = r.get("fundamental_score")
     rec     = r.get("recommendation", "")
     pred    = r.get("prediction") or {}
     c       = r.get("close")
     h252    = r.get("high_252")
     l252    = r.get("low_252")
+    is_etf  = r.get("asset_type") == "ETF"
 
     badges = []
     if h252 and c and c >= h252 * 0.999: badges.append("📈52주高")
     if l252 and c and c <= l252 * 1.001: badges.append("📉52주低")
     badge_str = ("  " + "  ".join(badges)) if badges else ""
 
+    # 점수 줄
+    score_parts = [f"장타 {ls:+.0f}", f"단타 {ss:+.0f}"]
+    if fs is not None and not is_etf:
+        score_parts.append(f"펀더멘털 {fs:+.0f}")
+    score_line = " / ".join(score_parts)
+
     lines = [
         f"{rank}. {icon} <b>{r['ticker']}</b>  {r['score']:+.0f}  "
         f"${c:.2f} ({chg_str}){badge_str}\n",
-        f"   장타 {ls:+.0f} / 단타 {ss:+.0f} → {rec}\n",
+        f"   {score_line}\n",
+        f"   → {rec}\n",
     ]
+
+    # 펀더멘털 상세 (주식 + 데이터 있는 경우만)
+    fbd  = r.get("fundamental_breakdown") or {}
+    fg   = r.get("fundamental_grade", "")
+    if fg and fg not in ("ETF", "데이터 없음", "") and not is_etf:
+        roe  = r.get("roe");      rs = fbd.get("roe_score", 0)
+        epg  = r.get("eps_growth"); es = fbd.get("eps_score", 0)
+        om   = r.get("op_margin"); ms = fbd.get("margin_score", 0)
+        fcfm = r.get("fcf_margin"); cs = fbd.get("fcf_score", 0)
+
+        roe_str = f"ROE {roe:.0f}%({rs:+d})"     if roe  is not None else f"ROE —({rs:+d})"
+        eps_str = f"EPS {epg:+.0f}%({es:+d})"    if epg  is not None else f"EPS —({es:+d})"
+        om_str  = f"영업이익률 {om:.0f}%({ms:+d})" if om  is not None else f"영업이익률 —({ms:+d})"
+        fcf_str = f"FCF마진 {fcfm:.0f}%({cs:+d})" if fcfm is not None else f"FCF마진 —({cs:+d})"
+
+        lines.append(
+            f"   📈 <b>펀더멘털</b>: {roe_str} / {eps_str}\n"
+            f"      {om_str} / {fcf_str}  → {fg}\n"
+        )
 
     lo68 = pred.get("short_lo_68")
     hi68 = pred.get("short_hi_68")
@@ -105,19 +136,21 @@ def _row_compact(rank: int, r: dict) -> str:
     icon    = _grade_icon(r["score"])
     ls      = r.get("long_score",  0)
     ss      = r.get("short_score", 0)
+    fs      = r.get("fundamental_score")
     rec     = r.get("recommendation", "")
     pred    = r.get("prediction") or {}
     lo68    = pred.get("short_lo_68")
     hi68    = pred.get("short_hi_68")
     week    = (f"${lo68:.0f}~${hi68:.0f}" if lo68 is not None and hi68 is not None else "—")
 
-    # 추천 텍스트에서 이모지 제거하고 핵심만
+    is_etf    = r.get("asset_type") == "ETF"
+    fund_str  = f" 펀더{fs:+.0f}" if fs is not None and not is_etf else ""
     rec_short = rec.split(" ", 1)[-1] if rec else "—"
 
     return (
         f"{rank}. {icon} <b>{r['ticker']}</b>  {r['score']:+.0f}  "
         f"${r['close']:.2f} ({chg_str}) / "
-        f"장타{ls:+.0f} 단타{ss:+.0f} / "
+        f"장타{ls:+.0f} 단타{ss:+.0f}{fund_str} / "
         f"1주 {week} / {rec_short}\n"
     )
 
@@ -163,11 +196,11 @@ def build_messages(
     out_sell = sorted([r for r in outer_results  if r["score"] < -3], key=lambda r: r["score"])
 
     # ── 통계 ──────────────────────────────────────────────────────────
-    buy2  = sum(1 for r in all_results if r["score"] >= 8)
-    buy1  = sum(1 for r in all_results if 4 <= r["score"] < 8)
-    watch = sum(1 for r in all_results if -3 <= r["score"] < 4)
-    sell1 = sum(1 for r in all_results if -7 <= r["score"] < -3)
-    sell2 = sum(1 for r in all_results if r["score"] < -7)
+    buy2  = sum(1 for r in all_results if r["score"] >= 18)
+    buy1  = sum(1 for r in all_results if 8  <= r["score"] < 18)
+    watch = sum(1 for r in all_results if -7 <= r["score"] < 8)
+    sell1 = sum(1 for r in all_results if -17 <= r["score"] < -7)
+    sell2 = sum(1 for r in all_results if r["score"] < -17)
 
     header = (
         f"📊 <b>미국 주식 시그널 리포트</b>\n"

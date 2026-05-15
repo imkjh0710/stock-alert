@@ -3,7 +3,7 @@
 매일 오전 6:30 / 오후 11:00 (KST) 자동 실행
 
 실행 방법:
-    venv\Scripts\python main.py
+    venv/Scripts/python main.py
 """
 import gc
 import json
@@ -12,8 +12,9 @@ from datetime import datetime
 
 from config import CACHE_DIR, ETF_TICKERS
 from universe import get_universe, get_etf_tickers
-from fetcher import fetch_batch, apply_quality_filter, fetch_fundamentals
-from scorer import score_all, score_fundamentals, grade_from_score
+from fetcher import fetch_batch, apply_quality_filter
+from scorer import score_all, grade_from_score, get_fundamental_recommendation
+from fundamentals import fetch_fundamental_data
 
 CHUNK_SIZE = 100
 
@@ -85,13 +86,13 @@ def main():
     print(f"  완료: 주식 {len(results)}개 / ETF {len(etf_results)}개 "
           f"(품질필터 통과 {passed}개 / 제외 {removed}개)\n")
 
-    # ── 3. 점수 분포 출력 ─────────────────────────────────────────────
+    # ── 3. 점수 분포 출력 (기술적 점수 기준, 펀더멘털 미반영 단계) ──────
     all_scored = results + etf_results
-    buy2  = sum(1 for r in all_scored if r["score"] >= 8)
-    buy1  = sum(1 for r in all_scored if 4 <= r["score"] < 8)
-    watch = sum(1 for r in all_scored if -3 < r["score"] < 4)
-    sell1 = sum(1 for r in all_scored if -7 <= r["score"] <= -4)
-    sell2 = sum(1 for r in all_scored if r["score"] < -7)
+    buy2  = sum(1 for r in all_scored if r["score"] >= 12)
+    buy1  = sum(1 for r in all_scored if 6 <= r["score"] < 12)
+    watch = sum(1 for r in all_scored if -5 <= r["score"] < 6)
+    sell1 = sum(1 for r in all_scored if -11 <= r["score"] < -5)
+    sell2 = sum(1 for r in all_scored if r["score"] < -11)
     print(f"  🟢🟢 {buy2}개  🟢 {buy1}개  ⚪ {watch}개  🔴 {sell1}개  🔴🔴 {sell2}개\n")
     del all_scored
 
@@ -117,19 +118,31 @@ def main():
     del sp500_results, outer_results, etf_results
     gc.collect()
 
-    top_tickers = {r["ticker"] for rows in candidates.values() for r in rows}
-    print(f"▶ PER/PBR 조회 및 밸류에이션 점수 반영 ({len(top_tickers)}개)...")
-    fund_map = fetch_fundamentals(list(top_tickers))
+    top_tickers    = {r["ticker"] for rows in candidates.values() for r in rows}
+    asset_type_map = {r["ticker"]: r["asset_type"] for rows in candidates.values() for r in rows}
+    print(f"▶ 펀더멘털 분析 (ROE·EPS·영업이익률·FCF) 반영 ({len(top_tickers)}개)...")
+    fund_map = fetch_fundamental_data(list(top_tickers), asset_types=asset_type_map)
 
     for rows in candidates.values():
         for r in rows:
-            fd              = fund_map.get(r["ticker"], {})
-            r["per"]        = fd.get("per")
-            r["pbr"]        = fd.get("pbr")
-            r["fund_score"] = score_fundamentals(r["per"], r["pbr"])
-            new_total       = max(-15.0, min(15.0, r["score"] + r["fund_score"]))
+            fd = fund_map.get(r["ticker"], {})
+            r.update({
+                "fundamental_score":     fd.get("fundamental_score", 0),
+                "fundamental_breakdown": fd.get("fundamental_breakdown", {}),
+                "fundamental_grade":     fd.get("fundamental_grade", "데이터 없음"),
+                "roe":                   fd.get("roe"),
+                "eps_growth":            fd.get("eps_growth"),
+                "op_margin":             fd.get("op_margin"),
+                "fcf_margin":            fd.get("fcf_margin"),
+                "per":                   fd.get("per"),
+                "pbr":                   fd.get("pbr"),
+            })
+            new_total       = max(-37.0, min(37.0, r["score"] + r["fundamental_score"]))
             r["score"]      = round(new_total, 1)
             r["grade"]      = grade_from_score(new_total)
+            r["recommendation"] = get_fundamental_recommendation(
+                r["fundamental_score"], r["long_score"], r["short_score"], r["asset_type"]
+            )
     del fund_map
     print("  완료\n")
 
@@ -142,15 +155,26 @@ def main():
         del holdings_raw
 
         if h_scored:
-            h_fund = fetch_fundamentals(list(h_scored.keys()))
+            h_fund = fetch_fundamental_data(list(h_scored.keys()))
             for t, r in h_scored.items():
-                fd              = h_fund.get(t, {})
-                r["per"]        = fd.get("per")
-                r["pbr"]        = fd.get("pbr")
-                r["fund_score"] = score_fundamentals(r["per"], r["pbr"])
-                new_total       = max(-15.0, min(15.0, r["score"] + r["fund_score"]))
+                fd = h_fund.get(t, {})
+                r.update({
+                    "fundamental_score":     fd.get("fundamental_score", 0),
+                    "fundamental_breakdown": fd.get("fundamental_breakdown", {}),
+                    "fundamental_grade":     fd.get("fundamental_grade", "데이터 없음"),
+                    "roe":                   fd.get("roe"),
+                    "eps_growth":            fd.get("eps_growth"),
+                    "op_margin":             fd.get("op_margin"),
+                    "fcf_margin":            fd.get("fcf_margin"),
+                    "per":                   fd.get("per"),
+                    "pbr":                   fd.get("pbr"),
+                })
+                new_total       = max(-37.0, min(37.0, r["score"] + r["fundamental_score"]))
                 r["score"]      = round(new_total, 1)
                 r["grade"]      = grade_from_score(new_total)
+                r["recommendation"] = get_fundamental_recommendation(
+                    r["fundamental_score"], r["long_score"], r["short_score"], r["asset_type"]
+                )
             holdings_scores = sorted(h_scored.values(), key=lambda r: r["score"], reverse=True)
             del h_fund, h_scored
         gc.collect()

@@ -146,19 +146,32 @@ def _fetch_holding_scores(tickers: tuple) -> dict:
     1y 기간 사용 (extract_signals 최소 200봉 요건 충족).
     """
     try:
-        from fetcher import fetch_batch, fetch_fundamentals
-        from scorer import score_all, score_fundamentals, grade_from_score
+        from fetcher import fetch_batch
+        from scorer import score_all, grade_from_score, get_fundamental_recommendation
+        from fundamentals import fetch_fundamental_data
         raw    = fetch_batch(list(tickers), period="1y", chunk_size=max(len(tickers), 1))
         scored = {r["ticker"]: r for r in score_all(raw)}
-        fund_map = fetch_fundamentals(list(scored.keys()))
+        fund_map = fetch_fundamental_data(list(scored.keys()))
         for ticker, r in scored.items():
-            fd              = fund_map.get(ticker, {})
-            r["per"]        = fd.get("per")
-            r["pbr"]        = fd.get("pbr")
-            r["fund_score"] = score_fundamentals(r["per"], r["pbr"])
-            new_total       = max(-15.0, min(15.0, r["score"] + r["fund_score"]))
+            fd = fund_map.get(ticker, {})
+            r.update({
+                "fundamental_score":     fd.get("fundamental_score", 0),
+                "fundamental_breakdown": fd.get("fundamental_breakdown", {}),
+                "fundamental_grade":     fd.get("fundamental_grade", "데이터 없음"),
+                "roe":                   fd.get("roe"),
+                "eps_growth":            fd.get("eps_growth"),
+                "op_margin":             fd.get("op_margin"),
+                "fcf_margin":            fd.get("fcf_margin"),
+                "per":                   fd.get("per"),
+                "pbr":                   fd.get("pbr"),
+            })
+            new_total       = max(-37.0, min(37.0, r["score"] + r["fundamental_score"]))
             r["score"]      = round(new_total, 1)
             r["grade"]      = grade_from_score(new_total)
+            r["recommendation"] = get_fundamental_recommendation(
+                r["fundamental_score"], r["long_score"], r["short_score"],
+                r.get("asset_type", "STOCK")
+            )
         return scored
     except Exception:
         return {}
@@ -371,8 +384,9 @@ elif page == "📋 보유 종목":
     else:
         st.markdown(f"**총 {len(holdings)}개 종목**")
         for col, label in zip(
-            st.columns([2, 4, 3, 2, 2, 2, 2, 1]),
-            ["**티커**", "**종목명**", "**등급**", "**합산**", "**가치점수**", "**PER**", "**PBR**", ""],
+            st.columns([2, 4, 3, 2, 2, 2, 2, 3, 1]),
+            ["**티커**", "**종목명**", "**등급**", "**합산**", "**장타**", "**단타**",
+             "**펀더멘털**", "**펀더등급**", ""],
         ):
             col.markdown(label)
         st.divider()
@@ -380,21 +394,52 @@ elif page == "📋 보유 종목":
         delete_idx = None
         for i, h in enumerate(holdings):
             sc = scores.get(h["ticker"])
-            c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([2, 4, 3, 2, 2, 2, 2, 1])
+            c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([2, 4, 3, 2, 2, 2, 2, 3, 1])
             c1.write(h["ticker"])
             c2.write(h.get("name", "—"))
             c3.write(sc["grade"] if sc else "—")
             c4.write(f"{sc['score']:+.1f}" if sc else "—")
-            c5.write(f"{sc['fund_score']:+.0f}" if sc and sc.get("fund_score") is not None else "—")
-            c6.write(f"{sc['per']:.1f}"   if sc and sc.get("per") else "—")
-            c7.write(f"{sc['pbr']:.2f}"   if sc and sc.get("pbr") else "—")
-            if c8.button("🗑️", key=f"del_{i}", help="삭제"):
+            c5.write(f"{sc.get('long_score', 0):+.0f}"  if sc else "—")
+            c6.write(f"{sc.get('short_score', 0):+.0f}" if sc else "—")
+            fs = (sc.get("fundamental_score") if sc else None)
+            c7.write(f"{fs:+.0f}" if fs is not None else "—")
+            c8.write(sc.get("fundamental_grade", "—") if sc else "—")
+            if c9.button("🗑️", key=f"del_{i}", help="삭제"):
                 delete_idx = i
 
         if delete_idx is not None:
             holdings.pop(delete_idx)
             save_holdings(holdings)
             st.rerun()
+
+        # 펀더멘털 상세 테이블
+        st.markdown("---")
+        st.markdown("#### 📈 펀더멘털 상세")
+        fund_records = []
+        for h in holdings:
+            sc = scores.get(h["ticker"])
+            if not sc:
+                continue
+            fbd = sc.get("fundamental_breakdown") or {}
+            fund_records.append({
+                "티커":          h["ticker"],
+                "펀더멘털점수":  f"{sc.get('fundamental_score', 0):+.0f}",
+                "펀더등급":      sc.get("fundamental_grade", "—"),
+                "ROE(%)":        f"{sc['roe']:.1f}"        if sc.get("roe")        is not None else "—",
+                "EPS성장(%)":    f"{sc['eps_growth']:+.1f}" if sc.get("eps_growth") is not None else "—",
+                "영업이익률(%)": f"{sc['op_margin']:.1f}"  if sc.get("op_margin")  is not None else "—",
+                "FCF마진(%)":    f"{sc['fcf_margin']:.1f}" if sc.get("fcf_margin") is not None else "—",
+                "ROE점수":       f"{fbd.get('roe_score', 0):+d}",
+                "EPS점수":       f"{fbd.get('eps_score', 0):+d}",
+                "이익률점수":    f"{fbd.get('margin_score', 0):+d}",
+                "FCF점수":       f"{fbd.get('fcf_score', 0):+d}",
+                "PER":           f"{sc['per']:.1f}"        if sc.get("per")        else "N/A",
+                "PBR":           f"{sc['pbr']:.2f}"        if sc.get("pbr")        else "N/A",
+            })
+        if fund_records:
+            st.dataframe(pd.DataFrame(fund_records), use_container_width=True, hide_index=True)
+        else:
+            st.caption("점수 조회 후 펀더멘털 상세가 표시됩니다.")
 
         # 최근 1주 지표 트렌드
         st.markdown("---")
@@ -578,36 +623,67 @@ elif page == "🚀 분석 실행":
                 with tab:
                     rows = last.get(key, [])
                     if rows:
+                        # ── 필터 ─────────────────────────────────────────
+                        fc1, fc2 = st.columns([1, 1])
+                        filter_fund = fc1.checkbox(
+                            "펀더멘털 우량만 (+5 이상)",
+                            key=f"ff_{key}",
+                        )
+                        filter_both = fc2.checkbox(
+                            "기술적 + 펀더멘털 둘 다 강한 종목",
+                            key=f"fb_{key}",
+                        )
+                        filtered = rows
+                        if filter_fund:
+                            filtered = [r for r in filtered
+                                        if (r.get("fundamental_score") or 0) >= 5]
+                        if filter_both:
+                            filtered = [r for r in filtered
+                                        if (r.get("fundamental_score") or 0) >= 5
+                                        and (r.get("long_score", 0) + r.get("short_score", 0)) >= 6]
+
                         records = []
-                        for r in rows:
+                        for r in filtered:
                             pred = r.get("prediction") or {}
                             def _rng(lo_k: str, hi_k: str) -> str:
                                 lo = pred.get(lo_k)
                                 hi = pred.get(hi_k)
                                 return f"${lo:.0f}~${hi:.0f}" if lo is not None and hi is not None else "—"
                             pat_sc = r.get("pattern_score")
+                            # 구버전 캐시 호환: fundamental_score 없으면 fund_score 폴백
+                            fs = r.get("fundamental_score")
+                            if fs is None:
+                                fs = r.get("fund_score")
                             records.append({
-                                "티커":     r["ticker"],
-                                "합산":     f"{r['score']:+.1f}",
-                                "장타":     f"{r.get('long_score',  0):+.0f}",
-                                "단타":     f"{r.get('short_score', 0):+.0f}",
-                                "가치점수": f"{r['fund_score']:+.0f}" if r.get("fund_score") is not None else "—",
-                                "패턴점수": f"{pat_sc:+.1f}" if pat_sc is not None else "—",
-                                "추천":     r.get("recommendation", "—"),
-                                "등급":     r["grade"],
-                                "패턴":     ", ".join(r.get("patterns", [])) or "—",
-                                "종가($)":  r["close"],
-                                "등락률":   f"{r['change_pct']:+.1f}%",
-                                "20일예측": _rng("pred_20_lo", "pred_20_hi"),
-                                "60일예측": _rng("pred_60_lo", "pred_60_hi"),
-                                "90일예측": _rng("pred_90_lo", "pred_90_hi"),
-                                "PER":      f"{r['per']:.1f}" if r.get("per") else "N/A",
-                                "PBR":      f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
+                                "티커":          r["ticker"],
+                                "합산":          f"{r['score']:+.1f}",
+                                "장타":          f"{r.get('long_score',  0):+.0f}",
+                                "단타":          f"{r.get('short_score', 0):+.0f}",
+                                "펀더멘털":      f"{fs:+.0f}" if fs is not None else "—",
+                                "펀더등급":      r.get("fundamental_grade", "—"),
+                                "ROE(%)":        f"{r['roe']:.1f}"        if r.get("roe")        is not None else "—",
+                                "EPS성장(%)":    f"{r['eps_growth']:+.1f}" if r.get("eps_growth") is not None else "—",
+                                "영업이익률(%)": f"{r['op_margin']:.1f}"  if r.get("op_margin")  is not None else "—",
+                                "FCF마진(%)":    f"{r['fcf_margin']:.1f}" if r.get("fcf_margin") is not None else "—",
+                                "추천":          r.get("recommendation", "—"),
+                                "등급":          r["grade"],
+                                "패턴점수":      f"{pat_sc:+.1f}" if pat_sc is not None else "—",
+                                "패턴":          ", ".join(r.get("patterns", [])) or "—",
+                                "종가($)":       r["close"],
+                                "등락률":        f"{r['change_pct']:+.1f}%",
+                                "20일예측":      _rng("pred_20_lo", "pred_20_hi"),
+                                "60일예측":      _rng("pred_60_lo", "pred_60_hi"),
+                                "90일예측":      _rng("pred_90_lo", "pred_90_hi"),
+                                "PER":           f"{r['per']:.1f}" if r.get("per") else "N/A",
+                                "PBR":           f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
                             })
-                        st.dataframe(
-                            pd.DataFrame(records),
-                            use_container_width=True, hide_index=True,
-                        )
+                        if records:
+                            st.dataframe(
+                                pd.DataFrame(records),
+                                use_container_width=True, hide_index=True,
+                            )
+                        else:
+                            st.info("필터 조건에 해당하는 종목이 없습니다.")
                     else:
                         st.info("해당 항목 없음 (관망 구간에 속하는 종목만 있거나 데이터 없음)")
         else:
@@ -681,11 +757,51 @@ elif page == "🚀 분석 실행":
                 fp.stem for fp in DAILY_DIR.glob("*.json")
                 if fp.stem >= str(_date.today() - _td(days=7))
             )
+            def _build_fundamental_changes() -> list[dict]:
+                """이번 주 펀더멘털 점수 ±2점 이상 변동 종목."""
+                ticker_fund: dict = {}
+                for fp in sorted(DAILY_DIR.glob("*.json")):
+                    try:
+                        file_date = _date.fromisoformat(fp.stem)
+                    except ValueError:
+                        continue
+                    if file_date < _date.today() - _td(days=7):
+                        continue
+                    try:
+                        with open(fp, encoding="utf-8") as f:
+                            data = json.load(f)
+                    except Exception:
+                        continue
+                    for cat in ["sp500_buy", "sp500_sell", "etf_buy", "etf_sell", "outer_buy", "outer_sell"]:
+                        for r in data.get(cat, []):
+                            t  = r["ticker"]
+                            fs = r.get("fundamental_score")
+                            if fs is None:
+                                continue
+                            if t not in ticker_fund:
+                                ticker_fund[t] = {"first": fs, "last": fs, "date": str(file_date)}
+                            elif str(file_date) > ticker_fund[t]["date"]:
+                                ticker_fund[t]["last"] = fs
+                                ticker_fund[t]["date"] = str(file_date)
+                changes = []
+                for ticker, d in ticker_fund.items():
+                    delta = d["last"] - d["first"]
+                    if abs(delta) >= 2:
+                        changes.append({
+                            "티커":   ticker,
+                            "변화량": f"{delta:+.0f}",
+                            "이전점수": f"{d['first']:+.0f}",
+                            "최근점수": f"{d['last']:+.0f}",
+                            "최근일": d["date"],
+                        })
+                return sorted(changes, key=lambda x: abs(float(x["변화량"])), reverse=True)
+
             st.caption(f"최근 7일 데이터 기준  |  포함 날짜: **{', '.join(file_dates)}**")
-            w1, w2, w3, w4, w5, w6 = st.tabs(
+            w1, w2, w3, w4, w5, w6, w7 = st.tabs(
                 ["🏆 S&P 500 매수", "🔻 S&P 500 매도",
                  "📊 ETF 매수",     "🔻 ETF 매도",
-                 "💎 외곽 매수",    "🔻 외곽 매도"]
+                 "💎 외곽 매수",    "🔻 외곽 매도",
+                 "📈 펀더멘털 변화"]
             )
             for tab, key in zip(
                 [w1, w2, w3, w4, w5, w6],
@@ -693,6 +809,14 @@ elif page == "🚀 분석 실행":
             ):
                 with tab:
                     _weekly_df(_build_weekly(key), f"w_tbl_{key}")
+            with w7:
+                st.markdown("#### 이번 주 펀더멘털 점수 변화 종목")
+                st.caption("±2점 이상 변동된 종목만 표시 (분기 실적 발표 직후 갱신)")
+                fc = _build_fundamental_changes()
+                if fc:
+                    st.dataframe(pd.DataFrame(fc), use_container_width=True, hide_index=True)
+                else:
+                    st.info("이번 주 펀더멘털 변화 종목 없음 (분기 실적 발표 직후 갱신됩니다)")
 
 
 # ══════════════════════════════════════════════════════════════════════

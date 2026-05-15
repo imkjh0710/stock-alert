@@ -9,8 +9,6 @@ from config import (
     RSI_OVERBOUGHT, RSI_OVERBOUGHT_STRONG,
     RSI_OVERSOLD,   RSI_OVERSOLD_STRONG,
     VOLUME_THRESHOLDS, VOLUME_POINTS,
-    PER_CHEAP_STRONG, PER_CHEAP, PER_PRICEY, PER_PRICEY_STRONG,
-    PBR_CHEAP, PBR_PRICEY, PBR_PRICEY_STRONG,
 )
 
 try:
@@ -80,7 +78,7 @@ def _score_tag(eff: float) -> str:
     return f"{eff:+.1f}"
 
 
-# ── 9-way 추천 매트릭스 ─────────────────────────────────────────────
+# ── 9-way 추천 매트릭스 (장타 × 단타, ETF / 펀더멘털 데이터 없는 경우 폴백) ─
 _RECOMMENDATION = {
     ("buy",     "buy"):     "🌟 장단기 모두 매수",
     ("buy",     "neutral"): "📈 장기 매수, 단기 대기",
@@ -105,6 +103,19 @@ _REC_SHORT = {
     "🔴 장단기 모두 매도":     "매도",
 }
 
+# ── 펀더멘털 × 기술적 9-way 추천 매트릭스 ──────────────────────────────
+_FUND_RECOMMENDATION = {
+    ("strong", "buy"):     "🌟 우량 성장 + 매수 타이밍",
+    ("strong", "neutral"): "💎 좋은 회사, 매수 타이밍 대기",
+    ("strong", "sell"):    "⚠️ 우량 회사 일시 부진 (장기 보유자 유리)",
+    ("neutral", "buy"):    "🟢 매수 추천",
+    ("neutral", "neutral"):"⚪ 관망",
+    ("neutral", "sell"):   "🔴 매도 추천",
+    ("weak",    "buy"):    "⚠️ 기술적 반등 (단타만, 장기 보유 비추)",
+    ("weak",    "neutral"):"⚠️ 펀더멘털 약함, 회피",
+    ("weak",    "sell"):   "🚨 회피 (회사 + 차트 모두 약함)",
+}
+
 
 def _score_vp(c: float, p: float, zones: list) -> float:
     if not zones:
@@ -124,28 +135,35 @@ def _score_vp(c: float, p: float, zones: list) -> float:
 
 
 def grade_from_score(total: float) -> str:
-    if   total >= 13:  return "🟢🟢 매수 강력 추천"
-    elif total >=  6:  return "🟢 매수 추천"
-    elif total >= -5:  return "⚪ 관망"
-    elif total >= -12: return "🔴 매도 추천"
+    if   total >= 18:  return "🟢🟢 매수 강력 추천"
+    elif total >=  8:  return "🟢 매수 추천"
+    elif total >= -7:  return "⚪ 관망"
+    elif total >= -17: return "🔴 매도 추천"
     else:              return "🔴🔴 매도 강력 추천"
 
 
-def score_fundamentals(per: float | None, pbr: float | None) -> float:
-    score = 0.0
-    if per is not None:
-        if   per < 0:                    score -= 1
-        elif per <= PER_CHEAP_STRONG:    score += 2
-        elif per <= PER_CHEAP:           score += 1
-        elif per <= PER_PRICEY:          score += 0
-        elif per <= PER_PRICEY_STRONG:   score -= 1
-        else:                            score -= 2
-    if pbr is not None and pbr > 0:
-        if   pbr < PBR_CHEAP:            score += 1
-        elif pbr <= PBR_PRICEY:          score += 0
-        elif pbr <= PBR_PRICEY_STRONG:   score -= 1
-        else:                            score -= 2
-    return round(max(-3.0, min(3.0, score)), 1)
+def get_fundamental_recommendation(
+    fundamental_score: float,
+    long_score: float,
+    short_score: float,
+    asset_type: str = "STOCK",
+) -> str:
+    """펀더멘털 × 기술적 9-매트릭스 추천. ETF / 데이터 없음은 장타×단타 폴백."""
+    if asset_type == "ETF" or fundamental_score == 0:
+        long_dir  = "buy"  if long_score  >= 6 else ("sell" if long_score  <= -6 else "neutral")
+        short_dir = "buy"  if short_score >= 6 else ("sell" if short_score <= -6 else "neutral")
+        return _RECOMMENDATION[(long_dir, short_dir)]
+
+    if fundamental_score >= 5:    fund_dir = "strong"
+    elif fundamental_score <= -5: fund_dir = "weak"
+    else:                          fund_dir = "neutral"
+
+    tech = long_score + short_score
+    if tech >= 6:    tech_dir = "buy"
+    elif tech <= -5: tech_dir = "sell"
+    else:            tech_dir = "neutral"
+
+    return _FUND_RECOMMENDATION[(fund_dir, tech_dir)]
 
 
 def _calc_pattern_scores(
