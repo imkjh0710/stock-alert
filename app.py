@@ -634,13 +634,16 @@ elif page == "🚀 분석 실행":
                             key=f"fb_{key}",
                         )
                         filtered = rows
-                        if filter_fund:
-                            filtered = [r for r in filtered
-                                        if (r.get("fundamental_score") or 0) >= 5]
-                        if filter_both:
+                        has_fund = any(r.get("fundamental_score") is not None for r in rows)
+                        if (filter_fund or filter_both) and not has_fund:
+                            st.warning("펀더멘털 데이터가 없습니다. 분석을 재실행하면 필터가 동작합니다.")
+                        elif filter_both:
                             filtered = [r for r in filtered
                                         if (r.get("fundamental_score") or 0) >= 5
                                         and (r.get("long_score", 0) + r.get("short_score", 0)) >= 6]
+                        elif filter_fund:
+                            filtered = [r for r in filtered
+                                        if (r.get("fundamental_score") or 0) >= 5]
 
                         records = []
                         for r in filtered:
