@@ -658,25 +658,28 @@ elif page == "🚀 분석 실행":
                             if fs is None:
                                 fs = r.get("fund_score")
                             records.append({
+                                # ── 점수 ──────────────────────────────
                                 "티커":          r["ticker"],
                                 "합산":          f"{r['score']:+.1f}",
                                 "장타":          f"{r.get('long_score',  0):+.0f}",
                                 "단타":          f"{r.get('short_score', 0):+.0f}",
                                 "펀더멘털":      f"{fs:+.0f}" if fs is not None else "—",
+                                # ── 기술적 분석 ───────────────────────
+                                "등급":          r["grade"],
+                                "추천":          r.get("recommendation", "—"),
+                                "종가($)":       r["close"],
+                                "등락률":        f"{r['change_pct']:+.1f}%",
+                                "패턴점수":      f"{pat_sc:+.1f}" if pat_sc is not None else "—",
+                                "패턴":          ", ".join(r.get("patterns", [])) or "—",
+                                "20일예측":      _rng("pred_20_lo", "pred_20_hi"),
+                                "60일예측":      _rng("pred_60_lo", "pred_60_hi"),
+                                "90일예측":      _rng("pred_90_lo", "pred_90_hi"),
+                                # ── 펀더멘털 상세 ─────────────────────
                                 "펀더등급":      r.get("fundamental_grade", "—"),
                                 "ROE(%)":        f"{r['roe']:.1f}"        if r.get("roe")        is not None else "—",
                                 "EPS성장(%)":    f"{r['eps_growth']:+.1f}" if r.get("eps_growth") is not None else "—",
                                 "영업이익률(%)": f"{r['op_margin']:.1f}"  if r.get("op_margin")  is not None else "—",
                                 "FCF마진(%)":    f"{r['fcf_margin']:.1f}" if r.get("fcf_margin") is not None else "—",
-                                "추천":          r.get("recommendation", "—"),
-                                "등급":          r["grade"],
-                                "패턴점수":      f"{pat_sc:+.1f}" if pat_sc is not None else "—",
-                                "패턴":          ", ".join(r.get("patterns", [])) or "—",
-                                "종가($)":       r["close"],
-                                "등락률":        f"{r['change_pct']:+.1f}%",
-                                "20일예측":      _rng("pred_20_lo", "pred_20_hi"),
-                                "60일예측":      _rng("pred_60_lo", "pred_60_hi"),
-                                "90일예측":      _rng("pred_90_lo", "pred_90_hi"),
                                 "PER":           f"{r['per']:.1f}" if r.get("per") else "N/A",
                                 "PBR":           f"{r['pbr']:.2f}" if r.get("pbr") else "N/A",
                             })
