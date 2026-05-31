@@ -1,5 +1,5 @@
 """
-차트 패턴 감지 — scipy.signal.find_peaks 사용
+차트 패턴 감지 — scipy.signal.find_peaks 사용 (매수/관망/매도 분류 포함)
 각 함수: (detected: bool, confidence: float) 반환
 """
 import numpy as np
@@ -156,6 +156,111 @@ def detect_falling_flag(df: pd.DataFrame, window: int = 20) -> tuple[bool, float
     return True, 0.70
 
 
+def detect_triple_top(df: pd.DataFrame, window: int = 80) -> tuple[bool, float]:
+    """삼중천정 — 비슷한 고점 3개 + 현재가 하락 (강한 매도 신호)"""
+    sub   = df.tail(min(window, len(df)))
+    highs = sub["High"].values
+    pks   = _peaks(sub["High"], distance=5)
+    if len(pks) < 3:
+        return False, 0.0
+    a, b, c = pks[-3], pks[-2], pks[-1]
+    h = highs[[a, b, c]]
+    if (h.max() - h.min()) / max(h.mean(), 1e-8) > 0.03:   return False, 0.0
+    curr = sub["Close"].values[-1]
+    if curr > h.mean():                                     return False, 0.0
+    conf = round(min(1.0, 0.75 + (1 - (h.max()-h.min())/max(h.mean(),1e-8)/0.03)*0.20), 2)
+    return True, conf
+
+
+def detect_triple_bottom(df: pd.DataFrame, window: int = 80) -> tuple[bool, float]:
+    """삼중바닥 — 비슷한 저점 3개 + 현재가 반등 (강한 매수 신호)"""
+    sub  = df.tail(min(window, len(df)))
+    lows = sub["Low"].values
+    trgs = _troughs(sub["Low"], distance=5)
+    if len(trgs) < 3:
+        return False, 0.0
+    a, b, c = trgs[-3], trgs[-2], trgs[-1]
+    l = lows[[a, b, c]]
+    if (l.max() - l.min()) / max(l.mean(), 1e-8) > 0.03:   return False, 0.0
+    curr = sub["Close"].values[-1]
+    if curr < l.mean():                                     return False, 0.0
+    conf = round(min(1.0, 0.75 + (1 - (l.max()-l.min())/max(l.mean(),1e-8)/0.03)*0.20), 2)
+    return True, conf
+
+
+def detect_rising_wedge(df: pd.DataFrame, window: int = 30) -> tuple[bool, float]:
+    """상승쐐기 — 고점·저점 모두 상승하나 저점이 더 가파르게 수렴 (약세 반전)"""
+    if len(df) < window:
+        return False, 0.0
+    post = df.tail(window)
+    hi, lo = post["High"].values, post["Low"].values
+    x = np.arange(len(hi))
+    hi_slope = float(np.polyfit(x, hi, 1)[0])
+    lo_slope = float(np.polyfit(x, lo, 1)[0])
+    if not (hi_slope > 0 and lo_slope > 0):                 return False, 0.0
+    if lo_slope <= hi_slope:                                return False, 0.0   # 저점이 더 가파름 = 수렴
+    width_start = hi[0] - lo[0]
+    width_end   = hi[-1] - lo[-1]
+    if width_start <= 0 or width_end >= width_start * 0.75: return False, 0.0
+    return True, 0.72
+
+
+def detect_falling_wedge(df: pd.DataFrame, window: int = 30) -> tuple[bool, float]:
+    """하강쐐기 — 고점·저점 모두 하락하나 고점이 더 가파르게 수렴 (강세 반전)"""
+    if len(df) < window:
+        return False, 0.0
+    post = df.tail(window)
+    hi, lo = post["High"].values, post["Low"].values
+    x = np.arange(len(hi))
+    hi_slope = float(np.polyfit(x, hi, 1)[0])
+    lo_slope = float(np.polyfit(x, lo, 1)[0])
+    if not (hi_slope < 0 and lo_slope < 0):                 return False, 0.0
+    if hi_slope >= lo_slope:                                return False, 0.0   # 고점이 더 가파름 = 수렴
+    width_start = hi[0] - lo[0]
+    width_end   = hi[-1] - lo[-1]
+    if width_start <= 0 or width_end >= width_start * 0.75: return False, 0.0
+    return True, 0.72
+
+
+def detect_symmetric_triangle(df: pd.DataFrame, window: int = 30) -> tuple[bool, float]:
+    """대칭삼각형 수렴 — 고점 하락 + 저점 상승, 돌파 전 (관망)"""
+    if len(df) < window:
+        return False, 0.0
+    post = df.tail(window)
+    hi, lo = post["High"].values, post["Low"].values
+    x = np.arange(len(hi))
+    hi_slope = float(np.polyfit(x, hi, 1)[0])
+    lo_slope = float(np.polyfit(x, lo, 1)[0])
+    if not (hi_slope < 0 and lo_slope > 0):                 return False, 0.0
+    width_start = hi[0] - lo[0]
+    width_end   = hi[-1] - lo[-1]
+    if width_start <= 0 or width_end >= width_start * 0.70: return False, 0.0
+    # 아직 돌파/이탈 전이어야 관망
+    curr = post["Close"].values[-1]
+    if curr > hi[-1] or curr < lo[-1]:                      return False, 0.0
+    return True, 0.70
+
+
+def detect_box_range(df: pd.DataFrame, window: int = 30) -> tuple[bool, float]:
+    """박스권 — 수평 저항·수평 지지 사이 횡보, 돌파 전 (관망)"""
+    if len(df) < window:
+        return False, 0.0
+    post = df.tail(window)
+    hi, lo = post["High"].values, post["Low"].values
+    x = np.arange(len(hi))
+    hi_slope = abs(float(np.polyfit(x, hi, 1)[0]))
+    lo_slope = abs(float(np.polyfit(x, lo, 1)[0]))
+    res, sup = hi.mean(), lo.mean()
+    band = (res - sup) / max(res, 1e-8)
+    if band < 0.02 or band > 0.20:                          return False, 0.0   # 너무 좁거나 넓으면 제외
+    # 기울기가 밴드 폭 대비 완만해야 수평
+    if hi_slope * len(hi) > (res - sup) * 0.5:              return False, 0.0
+    if lo_slope * len(lo) > (res - sup) * 0.5:              return False, 0.0
+    curr = post["Close"].values[-1]
+    if curr > res * 1.005 or curr < sup * 0.995:            return False, 0.0   # 돌파/이탈 시 관망 아님
+    return True, 0.68
+
+
 def detect_pennant(df: pd.DataFrame, window: int = 20) -> tuple[bool, float]:
     """페넌트 — 급등/급락 후 수렴하는 삼각형"""
     if len(df) < window + 5:
@@ -178,10 +283,16 @@ def scan_chart_patterns(df: pd.DataFrame) -> dict[str, tuple[bool, float]]:
         return {
             "double_bottom":              detect_double_bottom(df),
             "double_top":                 detect_double_top(df),
+            "triple_bottom":              detect_triple_bottom(df),
+            "triple_top":                 detect_triple_top(df),
             "head_and_shoulders":         detect_head_and_shoulders(df),
             "inv_head_and_shoulders":     detect_inverse_head_and_shoulders(df),
             "ascending_triangle":         detect_ascending_triangle(df),
             "descending_triangle":        detect_descending_triangle(df),
+            "rising_wedge":               detect_rising_wedge(df),
+            "falling_wedge":              detect_falling_wedge(df),
+            "symmetric_triangle":         detect_symmetric_triangle(df),
+            "box_range":                  detect_box_range(df),
             "rising_flag":                detect_rising_flag(df),
             "falling_flag":               detect_falling_flag(df),
             "pennant":                    detect_pennant(df),

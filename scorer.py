@@ -37,13 +37,59 @@ _CANDLE_PTS = {
 _CHART_PTS = {
     "double_bottom":          4.0,
     "double_top":            -4.0,
+    "triple_bottom":          5.0,   # 사라 — 삼중바닥
+    "triple_top":            -5.0,   # 팔아라 — 삼중천정
     "inv_head_and_shoulders": 4.0,
     "head_and_shoulders":    -4.0,
     "ascending_triangle":     3.0,
     "descending_triangle":   -3.0,
+    "rising_wedge":          -3.0,   # 팔아라 — 상승쐐기(약세 반전)
+    "falling_wedge":          3.0,   # 사라 — 하강쐐기(강세 반전)
+    "symmetric_triangle":     0.0,   # 기다려 — 대칭삼각형 수렴(관망)
+    "box_range":              0.0,   # 기다려 — 박스권(관망)
     "rising_flag":            3.0,
     "falling_flag":          -3.0,
     "pennant":                2.0,   # 방향은 context에서 결정
+}
+
+# ── 패턴 → 매수/관망/매도 신호 분류 (이미지 컨셉: 사라 / 기다려 / 팔아라) ──
+_PAT_SIGNAL = {
+    # 사라! (매수)
+    "double_bottom":          "buy",
+    "triple_bottom":          "buy",
+    "inv_head_and_shoulders": "buy",
+    "ascending_triangle":     "buy",
+    "falling_wedge":          "buy",
+    "rising_flag":            "buy",
+    "morning_star":           "buy",
+    "bullish_engulfing":      "buy",
+    "bullish_pin_bar":        "buy",
+    "three_white_soldiers":   "buy",
+    "tweezer_bottom":         "buy",
+    # 팔아라! (매도)
+    "double_top":             "sell",
+    "triple_top":             "sell",
+    "head_and_shoulders":     "sell",
+    "descending_triangle":    "sell",
+    "rising_wedge":           "sell",
+    "falling_flag":           "sell",
+    "evening_star":           "sell",
+    "bearish_engulfing":      "sell",
+    "shooting_star":          "sell",
+    "three_black_crows":      "sell",
+    "tweezer_top":            "sell",
+    "dark_cloud_cover":       "sell",
+    # 기다려! (관망)
+    "symmetric_triangle":     "wait",
+    "box_range":              "wait",
+    "pennant":                "wait",   # 방향 미정 → 관망 표기
+}
+
+# 신호별 표식 (이미지: 팔아라/기다려/사라)
+_SIGNAL_MARK = {
+    "buy":  "🟢사라",
+    "wait": "🟡기다려",
+    "sell": "🔴팔아라",
 }
 
 # ── 패턴 한글명 ──────────────────────────────────────────────────────
@@ -60,13 +106,19 @@ _PAT_KR = {
     "tweezer_top":            "고점쌍봉",
     "dark_cloud_cover":       "다크클라우드",
     "double_bottom":          "더블바텀",
-    "double_top":             "더블탑",
+    "double_top":             "더블탑(쌍봉)",
+    "triple_bottom":          "삼중바닥",
+    "triple_top":             "삼중천정",
     "inv_head_and_shoulders": "역삼존",
     "head_and_shoulders":     "삼존(H&S)",
     "ascending_triangle":     "상승삼각형",
     "descending_triangle":    "하강삼각형",
-    "rising_flag":            "상승플래그",
-    "falling_flag":           "하강플래그",
+    "rising_wedge":           "상승쐐기",
+    "falling_wedge":          "하강쐐기",
+    "symmetric_triangle":     "대칭삼각형수렴",
+    "box_range":              "박스권",
+    "rising_flag":            "상승플래그(깃발)",
+    "falling_flag":           "하강플래그(깃발)",
     "pennant":                "페넌트",
 }
 
@@ -76,6 +128,13 @@ def _stars(pts: float) -> str:
 
 def _score_tag(eff: float) -> str:
     return f"{eff:+.1f}"
+
+def _pat_label(name: str, eff: float) -> str:
+    """패턴 라벨에 매수/관망/매도 신호 표식을 붙인다."""
+    kr   = _PAT_KR.get(name, name)
+    mark = _SIGNAL_MARK.get(_PAT_SIGNAL.get(name, ""), "")
+    head = f"{mark} " if mark else ""
+    return f"{head}{kr}({_score_tag(eff)})"
 
 
 # ── 9-way 추천 매트릭스 (장타 × 단타, ETF / 펀더멘털 데이터 없는 경우 폴백) ─
@@ -207,8 +266,7 @@ def _calc_pattern_scores(
         if name == "evening_star" and combo_bear:
             eff = -5.0 if conf >= 0.7 else -2.5
         candle_raw += eff
-        kr = _PAT_KR.get(name, name)
-        found_labels.append(f"{kr}({_score_tag(eff)})")
+        found_labels.append(_pat_label(name, eff))
 
     # 거래량 2배+ 보너스
     if vol_ratio >= 2:
@@ -233,8 +291,7 @@ def _calc_pattern_scores(
         if name == "head_and_shoulders" and bc_ok:
             eff = -5.0 if conf >= 0.7 else -2.5
         chart_raw += eff
-        kr = _PAT_KR.get(name, name)
-        found_labels.append(f"{kr}({_score_tag(eff)})")
+        found_labels.append(_pat_label(name, eff))
 
     if vol_ratio >= 2:
         if chart_raw > 0:   chart_raw += 1.0
