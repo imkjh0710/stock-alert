@@ -38,5 +38,9 @@
   {
     "ticker": "FCBC",
     "name": "FCBC"
+  },
+  {
+    "ticker": "FNGU",
+    "name": "FNGU"
   }
 ]
