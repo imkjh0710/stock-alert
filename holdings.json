@@ -42,5 +42,9 @@
   {
     "ticker": "FNGU",
     "name": "FNGU"
+  },
+  {
+    "ticker": "COIN",
+    "name": "COIN"
   }
 ]
