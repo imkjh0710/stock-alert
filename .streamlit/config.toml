@@ -1,6 +1,10 @@
 [server]
-fileWatcherType = "none"   # 파일 변경 감시 비활성화 (CPU 절약)
+fileWatcherType = "none"
 maxUploadSize = 5
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+enableWebsocketCompression = false
 
 [browser]
 gatherUsageStats = false
