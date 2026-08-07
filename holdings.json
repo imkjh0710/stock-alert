@@ -38,5 +38,9 @@
   {
     "ticker": "RDDT",
     "name": "RDDT"
+  },
+  {
+    "ticker": "SOXL",
+    "name": "SOXL"
   }
 ]
