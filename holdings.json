@@ -42,5 +42,9 @@
   {
     "ticker": "SOXL",
     "name": "SOXL"
+  },
+  {
+    "ticker": "SNDK",
+    "name": "SNDK"
   }
 ]
