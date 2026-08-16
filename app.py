@@ -623,6 +623,14 @@ elif page == "🚀 분석 실행":
                 with tab:
                     rows = last.get(key, [])
                     if rows:
+                        is_sell = "sell" in key
+                        # ── 랭킹 기준 ────────────────────────────────────
+                        sort_by = st.radio(
+                            "랭킹 기준",
+                            ["합산 (기술+펀더멘털)", "기술적 (장타+단타)", "펀더멘털"],
+                            horizontal=True,
+                            key=f"sort_{key}",
+                        )
                         # ── 필터 ─────────────────────────────────────────
                         fc1, fc2 = st.columns([1, 1])
                         filter_fund = fc1.checkbox(
@@ -636,7 +644,7 @@ elif page == "🚀 분석 실행":
                         filtered = rows
                         has_fund = any(r.get("fundamental_score") is not None for r in rows)
                         if (filter_fund or filter_both) and not has_fund:
-                            st.warning("펀더멘털 데이터가 없습니다. 분석을 재실행하면 필터가 동작합니다.")
+                            st.warning("펀더멘털 데이터가 없습니다. 분析을 재실행하면 필터가 동작합니다.")
                         elif filter_both:
                             filtered = [r for r in filtered
                                         if (r.get("fundamental_score") or 0) >= 5
@@ -644,6 +652,20 @@ elif page == "🚀 분석 실행":
                         elif filter_fund:
                             filtered = [r for r in filtered
                                         if (r.get("fundamental_score") or 0) >= 5]
+                        # ── 정렬 적용 ─────────────────────────────────────
+                        rev = not is_sell
+                        if sort_by == "기술적 (장타+단타)":
+                            filtered = sorted(
+                                filtered,
+                                key=lambda r: r.get("long_score", 0) + r.get("short_score", 0),
+                                reverse=rev,
+                            )
+                        elif sort_by == "펀더멘털":
+                            filtered = sorted(
+                                filtered,
+                                key=lambda r: r.get("fundamental_score") or 0,
+                                reverse=rev,
+                            )
 
                         records = []
                         for r in filtered:
@@ -725,6 +747,7 @@ elif page == "🚀 분석 실행":
                             "count": 0, "scores": [],
                             "last_date": "", "last_score": 0,
                             "last_grade": "—", "last_rec": "—",
+                            "last_fund": None, "last_tech": 0,
                         }
                     d = ticker_data[t]
                     d["count"] += 1
@@ -734,6 +757,8 @@ elif page == "🚀 분석 실행":
                         d["last_score"] = r.get("score", 0)
                         d["last_grade"] = r.get("grade", "—")
                         d["last_rec"]   = r.get("recommendation", "—")
+                        d["last_fund"]  = r.get("fundamental_score")
+                        d["last_tech"]  = r.get("long_score", 0) + r.get("short_score", 0)
 
             out = []
             for ticker, d in ticker_data.items():
@@ -746,14 +771,28 @@ elif page == "🚀 분석 실행":
                     "최근등급": d["last_grade"],
                     "최근추천": d["last_rec"],
                     "_avg":   avg,
+                    "_fund":  d.get("last_fund"),
+                    "_tech":  d.get("last_tech", 0),
                 })
             return sorted(out, key=lambda x: (-x["출현(회)"], -x["_avg"]))
 
         def _weekly_df(records: list, tbl_key: str) -> None:
             if not records:
-                st.info("위클리 데이터가 없습니다. 데일리 분석이 누적되면 자동으로 표시됩니다.")
+                st.info("위클리 데이터가 없습니다. 데일리 分析이 누적되면 자동으로 표시됩니다.")
                 return
-            display = [{k: v for k, v in r.items() if k != "_avg"} for r in records]
+            is_sell = "sell" in tbl_key
+            sort_by = st.radio(
+                "정렬 기준",
+                ["출현+합산", "기술적 (최근)", "펀더멘털 (최근)"],
+                horizontal=True,
+                key=f"wsort_{tbl_key}",
+            )
+            rev = not is_sell
+            if sort_by == "기술적 (최근)":
+                records = sorted(records, key=lambda x: x.get("_tech") or 0, reverse=rev)
+            elif sort_by == "펀더멘털 (최근)":
+                records = sorted(records, key=lambda x: x.get("_fund") or 0, reverse=rev)
+            display = [{k: v for k, v in r.items() if not k.startswith("_")} for r in records]
             st.dataframe(pd.DataFrame(display), use_container_width=True, hide_index=True)
 
         if not DAILY_DIR.exists() or not any(DAILY_DIR.glob("*.json")):
