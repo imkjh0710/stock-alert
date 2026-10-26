@@ -22,6 +22,7 @@ LOGS_DIR            = BASE_DIR / "logs"
 LAST_RESULTS        = BASE_DIR / "cache" / "last_results.json"
 LAST_DIVIDEND       = BASE_DIR / "cache" / "last_dividend.json"
 HOLDINGS_ANALYSIS   = BASE_DIR / "cache" / "holdings_analysis.json"
+VOLUME_SPIKE        = BASE_DIR / "cache" / "volume_spike.json"
 
 
 # ── 기본 설정값 ───────────────────────────────────────────────────────
@@ -129,6 +130,14 @@ def _read_cache(path: Path) -> dict | None:
     if not path.exists():
         return None
     return _load_json(str(path), path.stat().st_mtime)
+
+
+@st.cache_data(ttl=1800)
+def _vs_hist(t: str) -> pd.DataFrame:
+    h = yf.download(t, period="3mo", auto_adjust=True, progress=False)
+    if isinstance(h.columns, pd.MultiIndex):
+        h.columns = h.columns.get_level_values(0)
+    return h[["Close", "Volume"]].dropna()
 
 def _fmt_payout(r: dict) -> str:
     """FCF배당성향 → 없으면 EPS(payoutRatio) 폴백"""
@@ -248,7 +257,7 @@ with st.sidebar:
     st.markdown("---")
     page = st.radio(
         "페이지",
-        ["⚙️ 지표 설정", "📋 보유 종목", "🚀 분석 실행", "💰 배당 분석", "🪙 코인 분석", "📁 리포트 기록"],
+        ["⚙️ 지표 설정", "📋 보유 종목", "🚀 분석 실행", "💰 배당 분석", "🔊 거래량 급증", "🪙 코인 분석", "📁 리포트 기록"],
         label_visibility="collapsed",
     )
     st.markdown("---")
@@ -973,7 +982,108 @@ elif page == "💰 배당 분석":
             if held:
                 _div_table(held, "div_held")
             else:
-                st.info("보유 종목 배당 데이터가 없습니다. 보유 종목을 등록하거나 배당 분석을 실행해주세요.")# ══════════════════════════════════════════════════════════════════════
+                st.info("보유 종목 배당 데이터가 없습니다. 보유 종목을 등록하거나 배당 분석을 실행해주세요.")
+
+# ══════════════════════════════════════════════════════════════════════
+# 4-1. 거래량 급증 + 주가 횡보
+# ══════════════════════════════════════════════════════════════════════
+elif page == "🔊 거래량 급증":
+    st.title("🔊 거래량 급증 · 주가 횡보")
+
+    vs = _read_cache(VOLUME_SPIKE)
+    if not vs:
+        st.info("아직 스캔 결과가 없습니다. 다음 자동 분석(🚀 분석 실행) 이후 표시됩니다.")
+    else:
+        lb, aw = vs.get("lookback_days", 21), vs.get("avg_window", 20)
+        base_ratio = float(vs.get("min_ratio", 3.0))
+        st.caption(
+            f"분석일: **{vs.get('date', '—')}**  |  스캔 종목: **{vs.get('total_scanned', 0):,}개**  |  "
+            f"최근 {lb}거래일 · 직전 {aw}거래일 평균 대비(당일 제외) · 주가 $5↑ & 20일 평균 50만주↑"
+        )
+
+        f1, f2, f3 = st.columns(3)
+        min_ratio = f1.slider("① 거래량 배수 (이상)", base_ratio, 10.0, base_ratio, 0.5, format="%.1f배")
+        max_chg   = f2.slider("② 당일 변동률 (±, 이내)", 0.5, 10.0, 3.0, 0.5, format="±%.1f%%")
+        groups    = f3.multiselect("구분", ["S&P 500", "외곽", "ETF"], default=["S&P 500", "외곽", "ETF"])
+
+        ev = pd.DataFrame(vs.get("events", []))
+        if ev.empty:
+            st.info("최근 한 달간 거래량 급증 종목이 없습니다.")
+        else:
+            step1 = ev[(ev["ratio"] >= min_ratio) & ev["group"].isin(groups)]
+            step2 = step1[step1["change_pct"].abs() <= max_chg]
+            n1, n2 = step1["ticker"].nunique(), step2["ticker"].nunique()
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("① 거래량 급증", f"{n1:,}개 종목", f"{len(step1):,}건", delta_color="off")
+            m2.metric("② 그중 주가 횡보", f"{n2:,}개 종목", f"{len(step2):,}건", delta_color="off")
+            m3.metric("통과율", f"{n2 / max(n1, 1) * 100:.0f}%")
+
+            if step2.empty:
+                st.info("조건을 만족하는 종목이 없습니다. 슬라이더를 조정해보세요.")
+            else:
+                latest = step2.sort_values("date").groupby("ticker").tail(1).set_index("ticker")
+                agg = step2.groupby("ticker").agg(hits=("date", "size"), max_ratio=("ratio", "max"))
+                summary = latest.join(agg).reset_index().sort_values(["date", "ratio"], ascending=False)
+
+                num = st.column_config.NumberColumn
+                tab_t, tab_e = st.tabs(["📌 종목별 (최근 급증일 기준)", "📜 이벤트 전체"])
+                with tab_t:
+                    st.dataframe(
+                        summary[["ticker", "group", "date", "days_ago", "ratio", "change_pct",
+                                 "hits", "max_ratio", "spike_close", "last_close", "since_pct"]],
+                        use_container_width=True, hide_index=True,
+                        column_config={
+                            "ticker":      "티커",
+                            "group":       "구분",
+                            "date":        "최근 급증일",
+                            "days_ago":    num("경과", format="%d거래일 전"),
+                            "ratio":       num("거래량 배수", format="%.1f배"),
+                            "change_pct":  num("당일 변동률", format="%+.2f%%"),
+                            "hits":        num("발생 횟수", format="%d회"),
+                            "max_ratio":   num("최대 배수", format="%.1f배"),
+                            "spike_close": num("급증일 종가", format="$%.2f"),
+                            "last_close":  num("현재가", format="$%.2f"),
+                            "since_pct":   num("급증일 대비", format="%+.1f%%"),
+                        },
+                    )
+                with tab_e:
+                    st.dataframe(
+                        step2[["ticker", "group", "date", "volume", "avg20", "ratio", "change_pct"]]
+                        .sort_values(["date", "ratio"], ascending=False),
+                        use_container_width=True, hide_index=True,
+                        column_config={
+                            "ticker":     "티커",
+                            "group":      "구분",
+                            "date":       "날짜",
+                            "volume":     num("거래량", format="localized"),
+                            "avg20":      num(f"직전 {aw}일 평균", format="localized"),
+                            "ratio":      num("배수", format="%.1f배"),
+                            "change_pct": num("변동률", format="%+.2f%%"),
+                        },
+                    )
+
+                # ── 종목 차트 ─────────────────────────────────────────
+                st.markdown("---")
+                pick = st.selectbox("📈 차트 보기", summary["ticker"].tolist())
+                if pick:
+                    try:
+                        h = _vs_hist(pick).copy()
+                        spike_days = set(step2.loc[step2["ticker"] == pick, "date"])
+                        h.index = h.index.strftime("%Y-%m-%d")
+                        is_spike = h.index.isin(list(spike_days))
+                        h["조건 충족일"] = h["Volume"].where(is_spike, 0)
+                        h["일반"] = h["Volume"].where(~is_spike, 0)
+                        c1, c2 = st.columns(2)
+                        c1.caption("종가 (3개월)")
+                        c1.line_chart(h["Close"], height=260)
+                        c2.caption("거래량 (빨강 = 조건 충족일)")
+                        c2.bar_chart(h[["일반", "조건 충족일"]], color=["#9aa5b1", "#e5484d"], height=260)
+                    except Exception as e:
+                        st.warning(f"차트 조회 실패: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════
 # 5. 리포트 기록
 # ══════════════════════════════════════════════════════════════════════
 elif page == "📁 리포트 기록":

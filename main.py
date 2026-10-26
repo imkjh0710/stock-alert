@@ -15,6 +15,7 @@ from universe import get_universe, get_etf_tickers
 from fetcher import fetch_batch, apply_quality_filter
 from scorer import score_all, grade_from_score, get_fundamental_recommendation
 from fundamentals import fetch_fundamental_data
+import volume_spike
 
 CHUNK_SIZE = 100
 
@@ -50,6 +51,9 @@ def main():
     etf_results: list[dict] = []
     holdings_raw: dict      = {}   # 품질필터 우회용 (보유 종목 원데이터)
     passed = removed = 0
+    spike_events: list[dict] = []
+    spike_scanned = 0
+    spike_group = lambda t: "ETF" if t in etf_set else ("S&P 500" if t in sp500_set else "외곽")
 
     for i in range(0, len(download_tickers), CHUNK_SIZE):
         chunk    = download_tickers[i : i + CHUNK_SIZE]
@@ -72,12 +76,16 @@ def main():
             removed  += len(stock_raw) - len(filtered)
             passed   += len(filtered)
             del stock_raw
+            spike_events.extend(volume_spike.scan(filtered, spike_group))
+            spike_scanned += len(filtered)
             results.extend(score_all(filtered, "STOCK"))
             del filtered
         else:
             del stock_raw
 
         if etf_raw:
+            spike_events.extend(volume_spike.scan(etf_raw, spike_group))
+            spike_scanned += len(etf_raw)
             etf_results.extend(score_all(etf_raw, "ETF"))
             del etf_raw
 
@@ -85,6 +93,10 @@ def main():
 
     print(f"  완료: 주식 {len(results)}개 / ETF {len(etf_results)}개 "
           f"(품질필터 통과 {passed}개 / 제외 {removed}개)\n")
+
+    volume_spike.save(spike_events, spike_scanned, t0.strftime("%Y-%m-%d"))
+    del spike_events
+    print()
 
     # ── 3. 점수 분포 출력 (기술적 점수 기준, 펀더멘털 미반영 단계) ──────
     all_scored = results + etf_results
