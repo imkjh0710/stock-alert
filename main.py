@@ -94,6 +94,13 @@ def main():
     print(f"  완료: 주식 {len(results)}개 / ETF {len(etf_results)}개 "
           f"(품질필터 통과 {passed}개 / 제외 {removed}개)\n")
 
+    spike_tickers = {e["ticker"] for e in spike_events}
+    spike_tech = {r["ticker"]: r for r in results + etf_results if r["ticker"] in spike_tickers}
+    spike_types = {t: ("ETF" if t in etf_set else "STOCK") for t in spike_tickers}
+    print(f"▶ 거래량 급증 종목 펀더멘털 조회 ({len(spike_tickers)}개)...")
+    spike_fund = fetch_fundamental_data(sorted(spike_tickers), asset_types=spike_types)
+    volume_spike.attach_scores(spike_events, spike_tech, spike_fund)
+    del spike_tech, spike_fund
     volume_spike.save(spike_events, spike_scanned, t0.strftime("%Y-%m-%d"))
     del spike_events
     print()

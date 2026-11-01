@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
@@ -1001,67 +1002,124 @@ elif page == "🔊 거래량 급증":
             f"최근 {lb}거래일 · 직전 {aw}거래일 평균 대비(당일 제외) · 주가 $5↑ & 20일 평균 50만주↑"
         )
 
+        ev = pd.DataFrame(vs.get("events", []))
+        if ev.empty:
+            st.info("최근 한 달간 거래량 급증 종목이 없습니다.")
+            st.stop()
+
+        has_vpa = "vpa_score" in ev.columns
+        for col in ("vpa_score", "vpa_grade", "vpa_parts", "tech_score", "fund_score"):
+            if col not in ev.columns:
+                ev[col] = None
+        if not has_vpa:
+            st.info("도르마이어 점수·기술적/펀더멘털 점수는 다음 자동 분석 이후 채워집니다.")
+
         f1, f2, f3 = st.columns(3)
         min_ratio = f1.slider("① 거래량 배수 (이상)", base_ratio, 10.0, base_ratio, 0.5, format="%.1f배")
         max_chg   = f2.slider("② 당일 변동률 (±, 이내)", 0.5, 10.0, 3.0, 0.5, format="±%.1f%%")
         groups    = f3.multiselect("구분", ["S&P 500", "외곽", "ETF"], default=["S&P 500", "외곽", "ETF"])
 
-        ev = pd.DataFrame(vs.get("events", []))
-        if ev.empty:
-            st.info("최근 한 달간 거래량 급증 종목이 없습니다.")
+        s_lo = float(np.floor(ev["since_pct"].min()))
+        s_hi = float(np.ceil(ev["since_pct"].max()))
+        if s_lo == s_hi:
+            s_hi += 1
+        g1, g2, _ = st.columns(3)
+        since_rng = g1.slider("③ 급증일 대비 주가", s_lo, s_hi, (s_lo, s_hi), 0.5, format="%+.1f%%")
+        vpa_rng = g2.slider("④ 도르마이어 점수", -10, 10, (-10, 10), 1,
+                            disabled=not has_vpa, help="+ 상승(매집) 신호 / - 하락(분산) 신호")
+
+        step1 = ev[(ev["ratio"] >= min_ratio) & ev["group"].isin(groups)]
+        step2 = step1[step1["change_pct"].abs() <= max_chg]
+        final = step2[step2["since_pct"].between(*since_rng)]
+        if has_vpa:
+            final = final[final["vpa_score"].between(*vpa_rng)]
+        n1, n2, n3 = (d["ticker"].nunique() for d in (step1, step2, final))
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("① 거래량 급증", f"{n1:,}개 종목", f"{len(step1):,}건", delta_color="off")
+        m2.metric("② 그중 주가 횡보", f"{n2:,}개 종목", f"{len(step2):,}건", delta_color="off")
+        m3.metric("③④ 최종", f"{n3:,}개 종목", f"{len(final):,}건", delta_color="off")
+        m4.metric("최종 통과율", f"{n3 / max(n1, 1) * 100:.0f}%")
+
+        with st.expander("📖 도르마이어 점수 계산 방식 (『거래량으로 투자하라』 기반, -10 ~ +10)"):
+            st.markdown(
+                "| 항목 | 점수 | 의미 |\n|---|---|---|\n"
+                "| 종가 위치 (급증일) | ±2 | 급증일 종가가 고가 쪽이면 매수세가 물량을 흡수(매집), 저가 쪽이면 분산 |\n"
+                "| VPCI (5/20일) | ±2 | 거래량 가중 이평과 단순 이평의 차이로 거래량이 추세를 확인하는지 판단 |\n"
+                "| VW (VWMA·VW-MACD) | ±2 | 20일 VWMA > SMA, VW-MACD 히스토그램 > 0 이면 + |\n"
+                "| 후속 거래량 (급증 이후) | ±2 | 상승일 거래량 ÷ 하락일 거래량. 1.5배↑ +2, 0.67배↓ -2 |\n"
+                "| 돌파/이탈 | ±1 | 현재가가 급증일 고가 위 +1, 저가 아래 -1 |\n"
+                "| OBV (20일) | ±1 | 가격은 제자리인데 OBV 상승 = 숨은 매집 +1, 반대 -1 |\n\n"
+                "**+5↑** 🟢🟢 강한 매집 · **+2↑** 🟢 매집 우세 · **-1~+1** ⚪ 중립 · "
+                "**-2↓** 🔴 분산 우세 · **-5↓** 🔴🔴 강한 분산\n\n"
+                "※ 책의 지표를 규칙화한 참고용 점수입니다. 과거 데이터로 수익률을 검증한 값이 아닙니다."
+            )
+
+        if final.empty:
+            st.info("조건을 만족하는 종목이 없습니다. 슬라이더를 조정해보세요.")
         else:
-            step1 = ev[(ev["ratio"] >= min_ratio) & ev["group"].isin(groups)]
-            step2 = step1[step1["change_pct"].abs() <= max_chg]
-            n1, n2 = step1["ticker"].nunique(), step2["ticker"].nunique()
+            _PART_NAMES = [("clv", "종가"), ("vpci", "VPCI"), ("vw", "VW"),
+                           ("follow", "후속"), ("break", "돌파"), ("obv", "OBV")]
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("① 거래량 급증", f"{n1:,}개 종목", f"{len(step1):,}건", delta_color="off")
-            m2.metric("② 그중 주가 횡보", f"{n2:,}개 종목", f"{len(step2):,}건", delta_color="off")
-            m3.metric("통과율", f"{n2 / max(n1, 1) * 100:.0f}%")
+            def _parts_str(p) -> str:
+                if not isinstance(p, dict):
+                    return "—"
+                return " · ".join(f"{name}{p.get(k, 0):+d}" for k, name in _PART_NAMES)
 
-            if step2.empty:
-                st.info("조건을 만족하는 종목이 없습니다. 슬라이더를 조정해보세요.")
-            else:
-                latest = step2.sort_values("date").groupby("ticker").tail(1).set_index("ticker")
-                agg = step2.groupby("ticker").agg(hits=("date", "size"), max_ratio=("ratio", "max"))
-                summary = latest.join(agg).reset_index().sort_values(["date", "ratio"], ascending=False)
+            final = final.assign(vpa_basis=final["vpa_parts"].map(_parts_str))
+            latest = final.sort_values("date").groupby("ticker").tail(1).set_index("ticker")
+            agg = final.groupby("ticker").agg(hits=("date", "size"), max_ratio=("ratio", "max"))
+            summary = (latest.join(agg).reset_index()
+                       .sort_values(["vpa_score", "ratio"], ascending=False, na_position="last"))
 
-                num = st.column_config.NumberColumn
-                tab_t, tab_e = st.tabs(["📌 종목별 (최근 급증일 기준)", "📜 이벤트 전체"])
-                with tab_t:
-                    st.dataframe(
-                        summary[["ticker", "group", "date", "days_ago", "ratio", "change_pct",
-                                 "hits", "max_ratio", "spike_close", "last_close", "since_pct"]],
-                        use_container_width=True, hide_index=True,
-                        column_config={
-                            "ticker":      "티커",
-                            "group":       "구분",
-                            "date":        "최근 급증일",
-                            "days_ago":    num("경과", format="%d거래일 전"),
-                            "ratio":       num("거래량 배수", format="%.1f배"),
-                            "change_pct":  num("당일 변동률", format="%+.2f%%"),
-                            "hits":        num("발생 횟수", format="%d회"),
-                            "max_ratio":   num("최대 배수", format="%.1f배"),
-                            "spike_close": num("급증일 종가", format="$%.2f"),
-                            "last_close":  num("현재가", format="$%.2f"),
-                            "since_pct":   num("급증일 대비", format="%+.1f%%"),
-                        },
-                    )
-                with tab_e:
-                    st.dataframe(
-                        step2[["ticker", "group", "date", "volume", "avg20", "ratio", "change_pct"]]
-                        .sort_values(["date", "ratio"], ascending=False),
-                        use_container_width=True, hide_index=True,
-                        column_config={
-                            "ticker":     "티커",
-                            "group":      "구분",
-                            "date":       "날짜",
-                            "volume":     num("거래량", format="localized"),
-                            "avg20":      num(f"직전 {aw}일 평균", format="localized"),
-                            "ratio":      num("배수", format="%.1f배"),
-                            "change_pct": num("변동률", format="%+.2f%%"),
-                        },
-                    )
+            num = st.column_config.NumberColumn
+            score_cols = {
+                "vpa_score":  num("도르마이어", format="%+d", help="거래량 기반 상승(+)/하락(-) 신호 총점, -10~+10"),
+                "vpa_grade":  "판정",
+                "vpa_basis":  "근거",
+                "tech_score": num("기술적", format="%+.1f", help="장타+단타 기술적 점수, -25~+25"),
+                "fund_score": num("펀더멘털", format="%+d", help="ROE·EPS·마진·FCF·PER·PBR, -17~+17 (ETF 제외)"),
+            }
+            tab_t, tab_e = st.tabs(["📌 종목별 (최근 급증일 기준)", "📜 이벤트 전체"])
+            with tab_t:
+                st.dataframe(
+                    summary[["ticker", "group", "vpa_score", "vpa_grade", "vpa_basis", "tech_score", "fund_score",
+                             "date", "days_ago", "ratio", "change_pct", "since_pct", "hits",
+                             "spike_close", "last_close"]],
+                    use_container_width=True, hide_index=True,
+                    column_config={
+                        "ticker":      "티커",
+                        "group":       "구분",
+                        **score_cols,
+                        "date":        "최근 급증일",
+                        "days_ago":    num("경과", format="%d거래일 전"),
+                        "ratio":       num("거래량 배수", format="%.1f배"),
+                        "change_pct":  num("당일 변동률", format="%+.2f%%"),
+                        "since_pct":   num("급증일 대비", format="%+.1f%%"),
+                        "hits":        num("발생 횟수", format="%d회"),
+                        "spike_close": num("급증일 종가", format="$%.2f"),
+                        "last_close":  num("현재가", format="$%.2f"),
+                    },
+                )
+            with tab_e:
+                st.dataframe(
+                    final[["ticker", "group", "date", "vpa_score", "vpa_basis", "volume", "avg20",
+                           "ratio", "change_pct", "since_pct"]]
+                    .sort_values(["date", "ratio"], ascending=False),
+                    use_container_width=True, hide_index=True,
+                    column_config={
+                        "ticker":     "티커",
+                        "group":      "구분",
+                        "date":       "날짜",
+                        "vpa_score":  score_cols["vpa_score"],
+                        "vpa_basis":  "근거",
+                        "volume":     num("거래량", format="localized"),
+                        "avg20":      num(f"직전 {aw}일 평균", format="localized"),
+                        "ratio":      num("배수", format="%.1f배"),
+                        "change_pct": num("변동률", format="%+.2f%%"),
+                        "since_pct":  num("급증일 대비", format="%+.1f%%"),
+                    },
+                )
 
                 # ── 종목 차트 ─────────────────────────────────────────
                 st.markdown("---")
@@ -1069,7 +1127,7 @@ elif page == "🔊 거래량 급증":
                 if pick:
                     try:
                         h = _vs_hist(pick).copy()
-                        spike_days = set(step2.loc[step2["ticker"] == pick, "date"])
+                        spike_days = set(final.loc[final["ticker"] == pick, "date"])
                         h.index = h.index.strftime("%Y-%m-%d")
                         is_spike = h.index.isin(list(spike_days))
                         h["조건 충족일"] = h["Volume"].where(is_spike, 0)
